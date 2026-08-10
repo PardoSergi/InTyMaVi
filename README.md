@@ -40,7 +40,7 @@ capitalisation are ignored:
 | Variety / dialect (optional) | `Varietat` / `Variety` |
 | Latitude (decimal or DMS) | `Latitud` / `Latitude` |
 | Longitude (decimal or DMS) | `Longitud` / `Longitude` |
-| Family / classification | `Familia` / `Family` |
+| Family / classification | `Família` / `Family` |
 
 Coordinates can be plain decimal numbers (`41.38`) or degrees/minutes/seconds
 with a cardinal letter (`41°23'N`).
