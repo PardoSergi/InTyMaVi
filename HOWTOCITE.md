@@ -1,6 +1,8 @@
 ### Base software citation
 
-Pardo Doña, S. (2026). *InTyMaVi: Interactive Typological Map Visualiser* (Version 0.1.0) [Computer software]. GitHub. https://github.com/PardoSergi/InTyMaVi/tree/main
+If you use InTyMaVi in your research, please cite the version you used as described below:
+
+>Pardo Doña, S. (2026). *InTyMaVi: Interactive Typological Map Visualiser* (Version 0.1.0) [Computer software]. GitHub. https://github.com/PardoSergi/InTyMaVi/tree/main
 
 ### Data sources & attribution
 
