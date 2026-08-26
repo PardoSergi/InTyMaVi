@@ -1,0 +1,1932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Typological Map Visualiser</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- SheetJS for Excel import -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#2c2c2c;
+  --bg:#f0f0ec;
+  --panel:#e6e6e0;
+  --border:#b8b8b0;
+  --accent:#4a6741;
+  --accent2:#5a7a50;
+  --hover:#dcdcd4;
+  --shadow:0 4px 18px rgba(0,0,0,.14);
+  --hdr:#2e3830;
+  --hdr-text:#e8ede6;
+  --hdr-sub:#9ab89a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:var(--hdr);color:var(--ink);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* HEADER */
+header{background:var(--hdr);color:var(--hdr-text);padding:9px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid var(--accent2);flex-shrink:0;z-index:1000}
+header h1{font-family:Arial,sans-serif;font-size:1.15rem;color:var(--hdr-text);font-weight:700;line-height:1.2}
+header p{font-size:.68rem;color:var(--hdr-sub);font-style:italic;margin-top:3px}
+.hdr-btns{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.hdr-btn{background:var(--accent);color:var(--hdr-text);border:none;border-radius:5px;padding:6px 13px;font-family:Arial,sans-serif;font-size:.76rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .15s,transform .1s;white-space:nowrap}
+.hdr-btn:hover{background:var(--accent2);transform:translateY(-1px)}
+.hdr-btn svg{flex-shrink:0}
+
+/* LAYOUT */
+.app-body{display:flex;flex:1;overflow:hidden}
+#sidebar{width:306px;min-width:250px;background:var(--bg);border-right:2px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;flex-shrink:0;z-index:500;box-shadow:2px 0 12px rgba(0,0,0,.1)}
+
+/* FEATURE SELECTOR */
+.sb-feat{padding:11px 14px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+label.feat-lbl{font-size:.72rem;color:#555;font-style:italic;display:block;margin-bottom:4px}
+select{width:100%;padding:5px 24px 5px 8px;font-family:Arial,sans-serif;font-size:.78rem;border:1px solid var(--border);border-radius:4px;background:var(--panel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234a6741'/%3E%3C/svg%3E") no-repeat right 8px center;color:var(--ink);cursor:pointer;outline:none;appearance:none}
+select:focus{border-color:var(--accent)}
+
+/* LEGEND — takes remaining space */
+.leg-sect{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:10px 14px 0;border-bottom:1px solid var(--border);min-height:0}
+.leg-title{font-family:Arial,sans-serif;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);margin-bottom:6px;flex:1;min-width:0;word-wrap:break-word;overflow-wrap:break-word;line-height:1.3}
+#leg-scroll{overflow-y:auto;flex:1;padding-bottom:6px}
+.leg-item{display:flex;align-items:center;gap:5px;margin-bottom:3px;padding:2px 3px;border-radius:4px;transition:background .12s;cursor:pointer}
+.leg-item:hover{background:var(--hover)}
+.leg-item.dimmed{opacity:.2}
+.leg-sym{width:22px;height:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;position:relative}
+.leg-dot{width:16px;height:16px;cursor:pointer;transition:transform .12s;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.leg-dot:hover{transform:scale(1.28)}
+.leg-lbl{font-size:.70rem;color:var(--ink);line-height:1.3;flex:1;user-select:none}
+.leg-nbadge{font-size:.59rem;background:#888;color:#fff;border-radius:8px;padding:1px 5px;flex-shrink:0;white-space:nowrap}
+
+/* CORR SELECTOR */
+.sb-corr{padding:6px 14px 8px;border-bottom:1px solid var(--border);flex-shrink:0}
+.corr-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.corr-toggle{background:none;border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:.62rem;color:var(--accent);cursor:pointer;font-family:Arial,sans-serif;white-space:nowrap;transition:background .12s}
+.corr-toggle:hover{background:var(--hover)}
+.corr-toggle.active{background:var(--accent);color:white;border-color:var(--accent)}
+#corr-sel-wrap{display:none}
+#corr-sel-wrap.on{display:block}
+.corr-info{font-size:.60rem;color:#888;font-style:italic;margin-top:2px}
+.cp-pop{position:absolute;left:25px;top:-4px;background:var(--bg);border:1.5px solid var(--border);border-radius:7px;padding:8px 10px;z-index:9999;box-shadow:var(--shadow);min-width:250px}
+.cp-title{font-size:.65rem;font-style:italic;color:var(--accent);margin-bottom:5px;font-family:Arial,sans-serif}
+.cp-sw{display:grid;grid-template-columns:repeat(10,19px);gap:3px;margin-bottom:6px}
+.cp-s{width:19px;height:19px;border-radius:3px;cursor:pointer;border:2px solid rgba(0,0,0,0.15);transition:border-color .1s,transform .1s}
+.cp-s:hover{transform:scale(1.18);border-color:#333}
+.cp-s.sel{border-color:#333}
+.cp-cust{display:flex;align-items:center;gap:6px}
+.cp-cust label{font-size:.65rem;font-style:italic;color:#555}
+.cp-cust input[type=color]{width:26px;height:21px;border:1px solid var(--border);border-radius:3px;cursor:pointer;padding:0;background:none}
+.cp-title2{font-size:.65rem;font-style:italic;color:var(--accent);margin:9px 0 5px;font-family:Arial,sans-serif}
+.cp-shapes{display:flex;gap:6px}
+.cp-shape-btn{width:27px;height:27px;border-radius:5px;border:2px solid var(--border);background:var(--panel);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:border-color .1s,transform .1s}
+.cp-shape-btn:hover{transform:scale(1.12);border-color:#888}
+.cp-shape-btn.sel{border-color:var(--accent);background:rgba(74,103,65,.14)}
+
+/* LANG LIST */
+#lang-list-section{padding:8px 14px 16px;overflow-y:auto;flex-shrink:0;border-top:1px solid var(--border)}
+.ll-resize-handle{height:9px;cursor:row-resize;flex-shrink:0;position:relative;background:transparent;touch-action:none}
+.ll-resize-handle::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:36px;height:3px;border-radius:2px;background:var(--border);transition:background .12s}
+.ll-resize-handle:hover::before,.ll-resize-handle.dragging::before{background:var(--accent)}
+.ll-sticky-top{position:sticky;top:-8px;background:var(--bg);z-index:2;padding-top:8px;margin-top:-8px;padding-bottom:2px}
+.ll-hdr{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.ll-hdr h3{font-family:Arial,sans-serif;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.ll-count-badge{font-size:.59rem;background:var(--accent);color:#fff;border-radius:9px;padding:1px 7px}
+#srch{width:100%;padding:5px 9px;font-family:Arial,sans-serif;font-size:.76rem;border:1px solid var(--border);border-radius:4px;background:var(--panel);color:var(--ink);outline:none;margin-bottom:4px}
+#srch:focus{border-color:var(--accent)}
+.ll-item{font-size:.70rem;padding:2px 3px;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background .12s}
+.ll-item:hover{background:var(--hover)}
+.ll-sym{width:17px;height:17px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ll-dot{width:11px;height:11px;display:flex;align-items:center;justify-content:center}
+.ll-name{flex:1;line-height:1.3}
+.ll-chev{font-size:.54rem;color:#888;transition:transform .15s;flex-shrink:0}
+.ll-item.xp .ll-chev{transform:rotate(90deg)}
+.ll-det{display:none;background:var(--panel);border:1px solid var(--border);border-radius:4px;margin:2px 0 4px 23px;padding:5px 8px;font-size:.66rem}
+.ll-det.on{display:block}
+.ll-det table{width:100%;border-collapse:collapse}
+.ll-det td{padding:2px 4px;border-bottom:1px solid var(--border);vertical-align:top}
+.ll-det td:first-child{font-weight:600;color:var(--accent);width:55%;white-space:normal}
+
+/* MAP */
+#map{flex:1}
+.leaflet-popup-content-wrapper{background:rgba(240,240,236,.97);border:1.5px solid var(--border);border-radius:7px;box-shadow:var(--shadow);max-width:300px}
+.leaflet-popup-tip{background:rgba(240,240,236,.97)}
+.pp-name{font-family:Arial,sans-serif;font-size:1.02rem;color:var(--accent);margin-bottom:2px}
+.pp-var{font-size:.68rem;font-style:italic;color:#555;margin-bottom:6px}
+.pp-ph{font-size:.65rem;color:#333;margin-bottom:10px;font-style:italic;line-height:1.55;border-left:2.5px solid var(--accent2);padding-left:7px}
+.pp-fb{background:rgba(74,103,65,.08);border:1px solid rgba(74,103,65,.25);border-radius:5px;padding:8px 12px}
+.pp-fl{font-size:.65rem;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.pp-fv{font-size:.93rem;font-family:Arial,sans-serif;color:var(--ink)}
+.nm-badge{font-size:.58rem;background:var(--accent2);color:#fff;border-radius:3px;padding:1px 5px;margin-left:6px;font-style:normal;font-weight:600;font-family:sans-serif}
+/* hide zoom control in screenshot via class we add before capture */
+
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+
+/* OVERLAYS */
+#cap-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#fff;font-family:Arial,sans-serif;font-size:1.05rem}
+#cap-ov.on{display:flex}
+.spin{width:34px;height:34px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+/* LEGEND POSITION MODAL */
+#legpos-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:88888;align-items:center;justify-content:center}
+#legpos-modal.on{display:flex}
+.legpos-box{background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:24px 28px;max-width:320px;width:90%;box-shadow:var(--shadow);text-align:center}
+.legpos-box h2{font-family:Arial,sans-serif;font-size:1.05rem;color:var(--accent);margin-bottom:8px}
+.legpos-box p{font-size:.76rem;color:#555;margin-bottom:18px}
+.legpos-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.legpos-btn{background:var(--panel);border:2px solid var(--border);border-radius:7px;padding:14px 10px;cursor:pointer;font-family:Arial,sans-serif;font-size:.78rem;color:var(--ink);display:flex;align-items:center;justify-content:center;gap:7px;transition:background .13s,border-color .13s}
+.legpos-btn:hover{background:var(--hover);border-color:var(--accent)}
+.legpos-btn .pos-icon{width:36px;height:28px;border:1.5px solid var(--border);border-radius:3px;position:relative;background:#e0e0d8;flex-shrink:0}
+.legpos-btn .pos-dot{position:absolute;width:11px;height:9px;background:var(--accent);border-radius:2px}
+.pos-dot.tl{top:3px;left:3px}
+.pos-dot.tr{top:3px;right:3px}
+.pos-dot.bl{bottom:3px;left:3px}
+.pos-dot.br{bottom:3px;right:3px}
+.legpos-cancel{font-size:.74rem;color:#888;cursor:pointer;text-decoration:underline;background:none;border:none;font-family:Arial,sans-serif}
+.legpos-cancel:hover{color:var(--ink)}
+.legpos-box{max-width:900px;max-height:92vh;overflow-y:auto}
+.dl-field{margin-bottom:16px;text-align:left}
+.dl-field-lbl{font-size:.72rem;color:#555;font-style:italic;display:block;margin-bottom:5px}
+.dl-row{display:flex;gap:8px}
+.dl-row select{flex:1}
+.legpos-grid.with-none{grid-template-columns:1fr 1fr}
+.legpos-btn{position:relative}
+.legpos-btn.sel{background:var(--accent);border-color:var(--accent);color:#fff}
+.legpos-btn.sel .pos-icon{border-color:rgba(255,255,255,.6);background:rgba(255,255,255,.15)}
+.legpos-btn.sel .pos-dot{background:#fff}
+.legpos-btn-none{grid-column:1/3;background:var(--panel);border:2px solid var(--border);border-radius:7px;padding:9px 10px;cursor:pointer;font-family:Arial,sans-serif;font-size:.76rem;color:var(--ink);transition:background .13s,border-color .13s}
+.legpos-btn-none:hover{background:var(--hover);border-color:var(--accent)}
+.legpos-btn-none.sel{background:var(--accent);border-color:var(--accent);color:#fff}
+.dl-check{display:flex;align-items:center;gap:7px;font-size:.74rem;color:#444;margin-top:10px;cursor:pointer}
+.dl-check input{cursor:pointer}
+.dl-actions{display:flex;justify-content:space-between;align-items:center;margin-top:18px}
+.dl-go-btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 20px;font-family:Arial,sans-serif;font-size:.8rem;font-weight:600;cursor:pointer;transition:background .13s}
+.dl-go-btn:hover{background:var(--accent2)}
+.dl-content{display:flex;gap:24px;align-items:flex-start;text-align:left}
+.dl-options{flex:1;min-width:230px}
+.dl-preview-col{width:380px;flex-shrink:0}
+.dl-preview-lbl{font-size:.72rem;color:#555;font-style:italic;margin-bottom:6px}
+.dl-preview-frame{width:100%;height:auto;border:1px solid var(--border);border-radius:7px;overflow:hidden;background:#e3e3dc;position:relative;display:flex;align-items:center;justify-content:center;transition:height .15s}
+.dl-preview-frame img{width:100%;height:100%;object-fit:cover;display:block}
+.dl-preview-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.62rem;color:#777;background:rgba(240,240,236,.85);text-align:center;padding:8px;line-height:1.4}
+.dl-preview-note{font-size:.6rem;color:#999;margin-top:7px;font-style:italic;line-height:1.4}
+.dl-manual-row{display:flex;align-items:center;gap:8px;margin-top:10px}
+.dl-manual-lbl{font-size:.7rem;color:#555;font-style:italic;flex-shrink:0}
+.dl-manual-row input[type=range]{flex:1;accent-color:var(--accent)}
+.dl-manual-val{font-size:.68rem;color:#777;flex-shrink:0;min-width:44px;text-align:right;font-variant-numeric:tabular-nums}
+.dl-focus-row{display:flex;align-items:center;gap:10px;margin-top:12px}
+.dl-focus-pad{display:grid;grid-template-columns:28px 28px 28px;grid-template-rows:28px 28px 28px;gap:2px}
+.dl-focus-btn{width:28px;height:28px;border:1px solid var(--border);border-radius:5px;background:var(--panel);cursor:pointer;font-size:.7rem;color:var(--ink);display:flex;align-items:center;justify-content:center;padding:0;transition:background .12s,border-color .12s}
+.dl-focus-btn:hover{background:var(--hover);border-color:var(--accent)}
+.dl-focus-center{color:var(--accent);font-size:.6rem}
+@media (max-width:700px){
+  .dl-content{flex-direction:column}
+  .dl-preview-col{width:100%}
+}
+
+/* IMPORT MODAL */
+#import-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:88888;align-items:center;justify-content:center}
+#import-modal.on{display:flex}
+#gb-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:88888;align-items:center;justify-content:center}
+#gb-modal.on{display:flex}
+.modal-box{background:var(--bg);border:2px solid var(--border);border-radius:10px;padding:24px 28px;max-width:420px;width:90%;box-shadow:var(--shadow)}
+.modal-box h2{font-family:Arial,sans-serif;font-size:1.1rem;color:var(--accent);margin-bottom:10px}
+.modal-box p{font-size:.78rem;color:#444;line-height:1.5;margin-bottom:14px}
+.modal-dropzone{border:2px dashed var(--border);border-radius:7px;padding:22px;text-align:center;font-size:.8rem;color:#666;cursor:pointer;transition:background .15s,border-color .15s;margin-bottom:14px}
+.modal-dropzone:hover,.modal-dropzone.drag{background:var(--hover);border-color:var(--accent)}
+.modal-dropzone input{display:none}
+.modal-dropzone .dz-icon{font-size:2rem;margin-bottom:6px}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end}
+.modal-btn{padding:6px 16px;border-radius:5px;border:none;font-family:Arial,sans-serif;font-size:.78rem;font-weight:600;cursor:pointer}
+.modal-btn-cancel{background:var(--panel);color:var(--ink)}
+.modal-btn-cancel:hover{background:var(--hover)}
+#modal-status{font-size:.73rem;color:#555;min-height:1.2em;margin-bottom:8px;font-style:italic}
+.modal-geo-sect{border-top:1px solid var(--border);margin-top:6px;padding-top:12px}
+.modal-geo-title{font-size:.75rem;font-weight:700;color:var(--accent);margin-bottom:3px}
+.modal-geo-desc{font-size:.68rem;color:#777;margin-bottom:8px;line-height:1.4}
+.modal-dropzone-sm{padding:12px;margin-bottom:6px}
+.modal-dropzone-sm .dz-icon{font-size:1.3rem;margin-bottom:3px}
+#geo-status{font-size:.7rem;color:#555;min-height:1.2em;font-style:italic}
+#geo-clear{background:none;border:none;color:var(--accent);font-size:.66rem;cursor:pointer;text-decoration:underline;padding:0;margin-top:2px;display:none}
+#geo-clear.on{display:inline-block}
+.gb-box{max-width:560px;width:92vw}
+.gb-status{font-size:.73rem;color:#555;min-height:1.2em;margin:6px 0;font-style:italic}
+#gb-search,#gb-family{width:100%;box-sizing:border-box;padding:7px 9px;font-size:.78rem;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-family:inherit}
+#gb-family-row label{font-size:.68rem;color:#777;display:block;margin-bottom:2px}
+#gb-feat-list{max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px 8px;background:#fafaf7}
+.gb-feat-row{display:flex;align-items:flex-start;gap:7px;padding:5px 2px;border-bottom:1px solid #eee;font-size:.74rem;line-height:1.35;cursor:pointer}
+.gb-feat-row:last-child{border-bottom:none}
+.gb-feat-row input{margin-top:2px;flex-shrink:0}
+.gb-feat-code{font-weight:700;color:var(--accent);margin-right:4px}
+#gb-selected-count{font-size:.68rem;color:#777;margin-top:5px;text-align:right}
+.gb-progress{width:100%;height:6px;background:#e4e4de;border-radius:3px;overflow:hidden;margin-top:4px}
+.gb-progress-bar{height:100%;background:var(--accent);width:0%;transition:width .2s}
+.gb-match-tag{display:inline-block;font-size:.62rem;background:var(--accent2);color:#fff;border-radius:3px;padding:1px 5px;margin-left:6px;font-weight:600;font-style:normal;vertical-align:1px}
+.dl-view-io{display:flex;gap:8px;margin-bottom:4px}
+.dl-io-btn{font-size:.7rem;padding:6px 11px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;color:#555;font-family:inherit}
+.dl-io-btn:hover{background:#f2f2ec}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Interactive Typological Map Visualiser</h1>
+    <p>Select a typological feature to view its geographic distribution</p>
+  </div>
+  <div class="hdr-btns">
+    <button class="hdr-btn" id="btn-import">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
+        <path d="M10 3a1 1 0 011 1v5.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 9.586V4a1 1 0 011-1z"/>
+        <rect x="3" y="16" width="14" height="1.5" rx=".75"/>
+      </svg>
+      Update data
+    </button>
+    <button class="hdr-btn" id="btn-grambank">🌐 Grambank</button>
+    <button class="hdr-btn" id="btn-dl">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor">
+        <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm8 2a1 1 0 011 1v.5h.5a1 1 0 010 2H15v1h-2v-1h-.5a1 1 0 010-2H13V6a1 1 0 011-1zM7 9.5a2.5 2.5 0 110 5 2.5 2.5 0 010-5z"/>
+        <path d="M7 10.5a1.5 1.5 0 100 3 1.5 1.5 0 000-3z"/>
+      </svg>
+      Download map
+    </button>
+    <button class="hdr-btn" id="btn-fullscreen" title="Toggle fullscreen">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" id="fs-icon">
+        <path d="M3 3h5v1.7H4.7V8H3V3zm14 0v5h-1.7V4.7H12V3h5zM3 17v-5h1.7v3.3H8V17H3zm14 0h-5v-1.7h3.3V12H17v5z"/>
+      </svg>
+      <span id="fs-label">Fullscreen</span>
+    </button>
+  </div>
+</header>
+
+<div class="app-body">
+  <div id="sidebar">
+
+    <!-- Feature selector -->
+    <div class="sb-feat">
+      <label class="feat-lbl" for="feat-sel">Variable to display:</label>
+      <select id="feat-sel" disabled>
+        <option value="">— load an Excel file first —</option>
+      </select>
+    </div>
+
+    <!-- Correlation selector -->
+    <div class="sb-corr">
+      <div class="corr-row">
+        <label class="feat-lbl" style="margin:0;flex:1" for="corr-sel">Cross with:</label>
+        <button class="corr-toggle" id="btn-corr-toggle" disabled>+ Correlation</button>
+      </div>
+      <div id="corr-sel-wrap">
+        <select id="corr-sel" disabled>
+          <option value="">— none —</option>
+        </select>
+        <div class="corr-info" id="corr-info"></div>
+      </div>
+    </div>
+    <div class="leg-sect">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;flex-shrink:0">
+        <div class="leg-title" style="margin-bottom:0">Legend</div>
+        <button id="btn-clear-filter" title="Clear all filters" style="display:none;background:none;border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:.62rem;color:var(--accent);cursor:pointer;font-family:Arial,sans-serif;white-space:nowrap;flex-shrink:0">✕ Clear selection</button>
+      </div>
+      <div id="leg-scroll"></div>
+    </div>
+
+    <!-- Lang list -->
+    <div class="ll-resize-handle" id="ll-resize-handle" title="Drag to resize"></div>
+    <div id="lang-list-section">
+      <div class="ll-sticky-top">
+        <div class="ll-hdr">
+          <h3>Language list</h3>
+          <span class="ll-count-badge" id="ll-count">0</span>
+        </div>
+        <input type="text" id="srch" placeholder="Search language…">
+      </div>
+      <div id="ll"></div>
+    </div>
+
+  </div>
+  <div id="map" style="position:relative">
+    <div id="upload-prompt" style="position:absolute;inset:0;z-index:900;display:flex;align-items:center;justify-content:center;background:rgba(240,240,236,0.88);pointer-events:none">
+      <div style="text-align:center;font-family:Arial,sans-serif;color:#4a6741;padding:32px 48px;background:white;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.12);border:1.5px solid #b8b8b0;pointer-events:auto">
+        <div style="font-size:3rem;margin-bottom:12px">🗺️</div>
+        <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px">No data loaded</div>
+        <div style="font-size:.85rem;color:#666;margin-bottom:20px;font-family:Arial,sans-serif">Upload an Excel file to display the data on the map</div>
+        <button onclick="document.getElementById('btn-import').click()" style="background:#4a6741;color:white;border:none;border-radius:6px;padding:9px 22px;font-family:Arial,sans-serif;font-size:.85rem;font-weight:600;cursor:pointer">📂 Load Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Capture overlay -->
+<div id="cap-ov"><div class="spin"></div><span>Generating map image…</span></div>
+
+<!-- Import modal -->
+<div id="import-modal">
+  <div class="modal-box">
+    <h2>Update map data</h2>
+    <p>Upload an Excel file (.xlsx) with the same format as the original file. The current data will be replaced.</p>
+    <div class="modal-dropzone" id="dropzone">
+      <div class="dz-icon">📂</div>
+      <div>Drag the Excel file here<br><small>or click to select it</small></div>
+      <input type="file" id="file-input" accept=".xlsx,.xls">
+    </div>
+    <div id="modal-status"></div>
+
+    <div class="modal-geo-sect">
+      <div class="modal-geo-title">Coordinates fallback (optional)</div>
+      <div class="modal-geo-desc">Load a Glottolog geo file (e.g. <code>languages_and_dialects_geo.csv</code>, columns: name, latitude, longitude). It's used only to fill in coordinates for languages that have none — or invalid ones — in the Excel file. Languages with valid Excel coordinates are never overridden.</div>
+      <div class="modal-dropzone modal-dropzone-sm" id="geo-dropzone">
+        <div class="dz-icon">🌍</div>
+        <div id="geo-dz-label">Drag the Glottolog CSV here<br><small>or click to select it</small></div>
+        <input type="file" id="geo-file-input" accept=".csv,.xlsx,.xls">
+      </div>
+      <div id="geo-status"></div>
+      <button id="geo-clear">Remove Glottolog file</button>
+    </div>
+
+    <div class="modal-btns">
+      <button class="modal-btn modal-btn-cancel" id="modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Grambank modal -->
+<div id="gb-modal">
+  <div class="modal-box gb-box">
+    <h2>Import from Grambank</h2>
+    <p>Pick any grammatical feature(s) from Grambank to add to the map. If your currently loaded data already has a column named exactly like a Grambank code (e.g. <code>GB130</code>), the two are merged into that same feature so you can compare your own coding against Grambank's worldwide sample. Otherwise the feature is added as a new column. Languages you already have are never duplicated or overwritten.</p>
+
+    <div id="gb-step-meta">
+      <div id="gb-meta-status" class="gb-status">Loading the list of features…</div>
+    </div>
+
+    <div id="gb-picker" style="display:none">
+      <input type="text" id="gb-search" placeholder="Search features (e.g. 'word order', 'article', 'GB130')…">
+      <div id="gb-family-row">
+        <label for="gb-family">Limit to family/families containing:</label>
+        <input type="text" id="gb-family" placeholder="e.g. Indo-European, Austronesian (optional, comma-separated)">
+      </div>
+      <div id="gb-feat-list"></div>
+      <div id="gb-selected-count">0 features selected</div>
+    </div>
+
+    <div id="gb-status" class="gb-status"></div>
+    <div class="modal-btns">
+      <button class="modal-btn modal-btn-cancel" id="gb-cancel">Cancel</button>
+      <button class="modal-btn" id="gb-go" style="background:#4a6741;color:#fff;display:none">Download &amp; import</button>
+    </div>
+  </div>
+</div>
+
+
+<div id="legpos-modal">
+  <div class="legpos-box">
+    <h2>Map download options</h2>
+    <p>Choose the zoom level, aspect ratio, icon/legend size, and legend placement for the exported map. These settings are remembered for future downloads. You can also save the current view to a file and load it again later — even in a different browser, session, or computer — to keep several exported maps perfectly consistent.</p>
+
+    <div class="dl-view-io">
+      <button type="button" class="dl-io-btn" id="dl-save-view">💾 Save view settings…</button>
+      <button type="button" class="dl-io-btn" id="dl-load-view">📂 Load view settings…</button>
+      <input type="file" id="dl-view-file" accept=".json" style="display:none">
+    </div>
+    <div id="dl-view-io-status" class="gb-status"></div>
+
+    <div class="dl-content">
+      <div class="dl-options">
+        <div class="dl-field">
+          <label class="dl-field-lbl">Zoom &amp; aspect ratio</label>
+          <div class="dl-row">
+            <select id="dl-zoom">
+              <option value="0">Zoom level 0 (~40,075 km wide — full-world extent)</option>
+              <option value="1">Zoom level 1 (~23,800 km wide)</option>
+              <option value="2">Zoom level 2 (~14,150 km wide)</option>
+              <option value="3">Zoom level 3 (~8,400 km wide)</option>
+              <option value="4">Zoom level 4 (~5,000 km wide)</option>
+              <option value="5">Zoom level 5 (~2,970 km wide)</option>
+              <option value="6">Zoom level 6 (~1,770 km wide)</option>
+              <option value="7">Zoom level 7 (~1,050 km wide)</option>
+              <option value="8">Zoom level 8 (~620 km wide)</option>
+              <option value="9">Zoom level 9 (~370 km wide)</option>
+              <option value="10">Zoom level 10 (~220 km wide)</option>
+            </select>
+            <select id="dl-ratio">
+              <option value="1:1">Ratio — Square (1:1)</option>
+              <option value="4:3">Ratio — Landscape (4:3)</option>
+              <option value="16:9">Ratio — Widescreen (16:9)</option>
+              <option value="3:4">Ratio — Portrait (3:4)</option>
+              <option value="9:16">Ratio — Phone screen (9:16)</option>
+            </select>
+          </div>
+          <div class="dl-manual-row">
+            <span class="dl-manual-lbl">Manual zoom adjustment</span>
+            <input type="range" id="dl-zoom-fine" min="-1" max="1" step="0.05" value="0">
+            <span class="dl-manual-val" id="dl-zoom-fine-val">±0.00</span>
+          </div>
+          <div class="dl-focus-row">
+            <span class="dl-manual-lbl">Focus</span>
+            <div class="dl-focus-pad">
+              <button type="button" class="dl-focus-btn" data-dir="up" title="Shift focus up" style="grid-column:2;grid-row:1">▲</button>
+              <button type="button" class="dl-focus-btn" data-dir="left" title="Shift focus left" style="grid-column:1;grid-row:2">◀</button>
+              <button type="button" class="dl-focus-btn dl-focus-center" data-dir="center" title="Recentre" style="grid-column:2;grid-row:2">●</button>
+              <button type="button" class="dl-focus-btn" data-dir="right" title="Shift focus right" style="grid-column:3;grid-row:2">▶</button>
+              <button type="button" class="dl-focus-btn" data-dir="down" title="Shift focus down" style="grid-column:2;grid-row:3">▼</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="dl-field">
+          <label class="dl-field-lbl">Icon &amp; legend size</label>
+          <select id="dl-size">
+            <option value="small">Small</option>
+            <option value="medium">Medium</option>
+            <option value="large">Large</option>
+          </select>
+        </div>
+
+        <div class="dl-field">
+          <label class="dl-field-lbl">Legend position</label>
+          <div class="legpos-grid" id="legpos-grid">
+            <button class="legpos-btn" data-pos="tl">
+              <div class="pos-icon"><div class="pos-dot tl"></div></div>
+              Top left
+            </button>
+            <button class="legpos-btn" data-pos="tr">
+              <div class="pos-icon"><div class="pos-dot tr"></div></div>
+              Top right
+            </button>
+            <button class="legpos-btn" data-pos="bl">
+              <div class="pos-icon"><div class="pos-dot bl"></div></div>
+              Bottom left
+            </button>
+            <button class="legpos-btn" data-pos="br">
+              <div class="pos-icon"><div class="pos-dot br"></div></div>
+              Bottom right
+            </button>
+            <button class="legpos-btn-none" data-pos="none">No legend on map</button>
+          </div>
+          <label class="dl-check">
+            <input type="checkbox" id="dl-legend-separate">
+            Also export the legend as a separate image
+          </label>
+        </div>
+      </div>
+
+      <div class="dl-preview-col">
+        <div class="dl-preview-lbl">Preview</div>
+        <div class="dl-preview-frame" id="dl-preview-frame">
+          <img id="dl-preview-img" style="display:none">
+          <div class="dl-preview-loading" id="dl-preview-loading">Generating preview…</div>
+        </div>
+        <div class="dl-preview-note">Approximate — the downloaded file is rendered at full resolution.</div>
+      </div>
+    </div>
+
+    <div class="dl-actions">
+      <button class="legpos-cancel" id="legpos-cancel">Cancel</button>
+      <button class="dl-go-btn" id="dl-go">Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let DATA=[];  // populated by Excel upload
+let RAWROWS=[];  // rows from the last Excel import, before coordinate resolution — kept so
+                  // coordinates can be re-resolved if a Glottolog geo file is loaded afterwards
+let GEO={};  // normalized language name -> {lat,lng,level}, populated by the optional Glottolog CSV
+
+/* ── GLOTTOLOG COORDINATE FALLBACK ────────────────────────────────────────
+   Matches by language name (accent/case-insensitive). Excel coordinates always
+   win when present and valid; Glottolog is used only to fill in what's missing. */
+function normGeoName(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+}
+function lookupGeo(name){
+  const key=normGeoName(name);
+  if(!key)return null;
+  return GEO[key]||null;
+}
+// Resolves final lat/lng for each raw row: keep valid Excel coordinates as-is,
+// fall back to GEO (Glottolog) only when the Excel value is missing/invalid.
+let lastGeoUsedCount=0;
+function resolveCoords(rawRows){
+  let geoUsed=0;
+  const out=rawRows.map(r=>{
+    let lat=parseCoord(r.latRaw);
+    let lng=parseCoord(r.lngRaw);
+    let coordSource='excel';
+    if(lat===null||lng===null){
+      const fb=lookupGeo(r.L);
+      if(fb){lat=fb.lat;lng=fb.lng;coordSource='glottolog';geoUsed++;}
+    }
+    const rest={};
+    Object.keys(r).forEach(k=>{if(k!=='latRaw'&&k!=='lngRaw')rest[k]=r[k];});
+    rest.lat=lat;rest.lng=lng;rest.coordSource=coordSource;
+    return rest;
+  }).filter(d=>d.lat!==null&&d.lng!==null&&!isNaN(d.lat)&&!isNaN(d.lng));
+  lastGeoUsedCount=geoUsed;
+  return out;
+}
+
+/* ── FEATURE LABELS — dynamic, rebuilt from uploaded Excel ───────────────── */
+// Reserved structural columns (language, variety, coordinates, phylogenetic family) are detected
+// dynamically from the uploaded file's headers — see findCol()/handleFile() below — in both
+// Catalan and English. Everything else in the sheet is treated as a typological variable.
+// FL maps column key -> display label (same as key initially; user can override via header row)
+let FL={};  // populated after Excel upload
+
+/* ── PALETTES — full spectrum ──────────────────────────────────────────── */
+const PAL=['#c0392b','#2980b9','#27ae60','#8e44ad','#e67e22','#16a085','#e91e63','#795548','#607d8b','#f1c40f','#00acc1','#558b2f','#d35400','#6d4c41','#2471a3','#9b59b6','#546e7a','#1abc9c','#c62828','#2e7d32'];
+// Color picker swatches: 10 columns = hue order + greyscale last column
+// rows = brightness (light→dark). No repeats.
+const SWC=[
+  // row 0: pastel/light (was row 3) + white
+  '#e57373','#ffb74d','#fff176','#a5d6a7','#80cbc4','#90caf9','#ce93d8','#f48fb1','#bcaaa4','#ffffff',
+  // row 1: light/bright (was row 0) + light grey
+  '#e74c3c','#e67e22','#f1c40f','#2ecc71','#1abc9c','#3498db','#9b59b6','#e91e63','#a1887f','#c8c8c8',
+  // row 2: mid (was row 1)          + dark grey
+  '#c0392b','#d35400','#f39c12','#27ae60','#16a085','#2980b9','#8e44ad','#c2185b','#795548','#606060',
+  // row 3: dark (was row 2)         + black
+  '#922b21','#a04000','#b7950b','#1e8449','#0e6655','#1a5276','#6c3483','#880e4f','#4e342e','#000000',
+];
+
+/* ── STATE ──────────────────────────────────────────────────────────────── */
+let cf=null, cf2=null, cm={}, shp={}, av=new Set(), op=null, mkrs=[], xi=null, hasData=false;
+const gv=(d,f)=>{const v=d[f];return(v===null||v===undefined||v===''||v==='N/A')?'—':String(v).trim()};
+// Combined key for correlation mode
+const corrKey=(d)=>cf2?`${gv(d,cf)} · ${gv(d,cf2)}`:gv(d,cf);
+function buildCM(f,f2=null){
+  let vs;
+  if(f2){
+    // All unique values for each variable
+    const vals1=[...new Set(DATA.map(d=>gv(d,f)))].sort();
+    const vals2=[...new Set(DATA.map(d=>gv(d,f2)))].sort();
+    // Full cross-product of all combinations (including zero-count ones)
+    vs=[];
+    vals1.forEach(v1=>vals2.forEach(v2=>vs.push(`${v1} · ${v2}`)));
+    vs.sort();
+  } else {
+    vs=[...new Set(DATA.map(d=>gv(d,f)))];
+    vs.sort();
+  }
+  const m={};vs.forEach((v,i)=>m[v]=PAL[i%PAL.length]);return m;
+}
+function countForVal(val){return DATA.filter(d=>corrKey(d)===val).length}
+
+/* ── ICON SHAPES ────────────────────────────────────────────────────────── */
+const SHAPES=['circle','triangle','triangle-down','square','diamond'];
+const SHAPE_LABELS={circle:'Circle',triangle:'Triangle','triangle-down':'Inverted triangle',square:'Square',diamond:'Rhombus'};
+// Returns inline SVG markup for a marker shape, sized to `size` px, for use in HTML (divIcon, legend dot, list dot)
+function shapeSVG(shape,color,size=18,strokeW=2.5,strokeColor='rgba(255,255,255,.82)',shadow=true){
+  const s=size,c=s/2,m=strokeW/2+1;
+  const GROW=1.1; // every interactive-map shape except the circle is drawn 10% larger, scaled outward from its centre
+  const sc=(x,y)=>[c+(x-c)*GROW, c+(y-c)*GROW];
+  let inner='';
+  if(shape==='square'){
+    const full=s-m*2, side=full*0.8*GROW, off=(full-side)/2; // 20% smaller than the shared footprint, then +10%
+    inner=`<rect x="${m+off}" y="${m+off}" width="${side}" height="${side}" rx="${side*0.14}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeW}"/>`;
+  } else if(shape==='diamond'){
+    const p1=sc(c,m),p2=sc(s-m,c),p3=sc(c,s-m),p4=sc(m,c);
+    inner=`<polygon points="${p1},${p2},${p3},${p4}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linejoin="round"/>`;
+  } else if(shape==='triangle'){
+    const p1=sc(c,m),p2=sc(s-m,s-m),p3=sc(m,s-m);
+    inner=`<polygon points="${p1},${p2},${p3}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linejoin="round"/>`;
+  } else if(shape==='triangle-down'){
+    const p1=sc(m,m),p2=sc(s-m,m),p3=sc(c,s-m);
+    inner=`<polygon points="${p1},${p2},${p3}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linejoin="round"/>`;
+  } else {
+    inner=`<circle cx="${c}" cy="${c}" r="${c-m}" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeW}"/>`;
+  }
+  const filt=shadow?' style="display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))"':' style="display:block"';
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"${filt}>${inner}</svg>`;
+}
+
+/* ── COLOUR UTILS ───────────────────────────────────────────────────────── */
+function mixWhite(hex,t){
+  /* mix hex colour with white at ratio t (0=colour, 1=white) — returns rgb() */
+  let h=hex.replace('#','');
+  if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+  return`rgb(${Math.round(r+(255-r)*t)},${Math.round(g+(255-g)*t)},${Math.round(b+(255-b)*t)})`;
+}
+
+/* ── MAP ────────────────────────────────────────────────────────────────── */
+const map=L.map('map',{center:[20,0],zoom:2,zoomSnap:0.5,zoomDelta:0.5,wheelPxPerZoomLevel:120});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CartoDB',maxZoom:18}).addTo(map);
+
+function mkIcon(color,shape='circle'){
+  const html=`<div style="width:18px;height:18px;cursor:pointer">${shapeSVG(shape,color,18)}</div>`;
+  return L.divIcon({className:'',html,iconSize:[18,18],iconAnchor:[9,9]});
+}
+
+function ppContent(d){
+  const nm=d.L.trim();
+  const ph=d.PHYLO?d.PHYLO.split(' > ').join(' › '):'<em style="color:#aaa">Phylogenetic classification pending</em>';
+  const geoBadge=d.coordSource==='glottolog'?'<span class="nm-badge" title="Coordinates from the Glottolog fallback file">Glottolog</span>'
+    :d.coordSource==='grambank'?'<span class="nm-badge" title="Language added from Grambank">Grambank</span>':'';
+  const fvBlock=cf2
+    ? `<div class="pp-fb"><div class="pp-fl">${FL[cf]||cf}</div><div class="pp-fv">${gv(d,cf)}</div></div><div class="pp-fb" style="margin-top:3px"><div class="pp-fl">${FL[cf2]||cf2}</div><div class="pp-fv">${gv(d,cf2)}</div></div>`
+    : `<div class="pp-fb"><div class="pp-fl">${FL[cf]||cf}</div><div class="pp-fv">${gv(d,cf)}</div></div>`;
+  return`<div class="pp-name">${nm}${geoBadge}</div>${d.V?`<div class="pp-var">Variety: ${d.V}</div>`:''}<div class="pp-ph">${ph}</div>${fvBlock}`;
+}
+function renderMkrs(){
+  mkrs.forEach(m=>map.removeLayer(m));mkrs=[];
+  clearConnectors();
+  const jpos=computeJitter(DATA);
+  DATA.forEach((d,i)=>{
+    const val=corrKey(d);const c=cm[val]||'#888';
+    const jp=jpos[i];
+    const m=L.marker([jp.lat,jp.lng],{icon:mkIcon(c,shp[val]||'circle')});
+    m.bindPopup(ppContent(d),{maxWidth:300});m._v=val;m._idx=i;m.addTo(map);mkrs.push(m);
+    if(jp.hasOffset){
+      const line=L.polyline([[d.lat,d.lng],[jp.lat,jp.lng]],{color:'#555',weight:1.2,opacity:0.55}).addTo(map);
+      connectorLines.push(line);
+    }
+  });
+  applyF();
+}
+function refreshIcons(){mkrs.forEach((m,i)=>{const d=DATA[i];const val=corrKey(d);m._v=val;m.setIcon(mkIcon(cm[val]||'#888',shp[val]||'circle'));m.setPopupContent(ppContent(d))});applyF()}
+function applyF(){mkrs.forEach(m=>{const vis=av.size===0||av.has(m._v);m.setOpacity(vis?1:.07);if(m.getElement())m.getElement().style.pointerEvents=vis?'auto':'none'})}
+
+/* ── LEGEND ─────────────────────────────────────────────────────────────── */
+function renderLeg(){
+  // Update legend title
+  const title=document.querySelector('.leg-title');
+  if(title)title.textContent=cf2?`${FL[cf]||cf} · ${FL[cf2]||cf2}`:'Legend';
+  const s=document.getElementById('leg-scroll');s.innerHTML='';
+  // Sort entries by frequency descending
+  const sorted=Object.entries(cm).sort((a,b)=>countForVal(b[0])-countForVal(a[0]));
+  sorted.forEach(([val,color])=>{
+    const item=document.createElement('div');
+    item.className='leg-item'+(av.size>0&&!av.has(val)?' dimmed':'');
+    const wrap=document.createElement('div');wrap.className='leg-sym';
+    const dot=document.createElement('div');dot.className='leg-dot';dot.title='Change color / shape';
+    dot.innerHTML=shapeSVG(shp[val]||'circle',color,16,2,'rgba(255,255,255,.7)');
+    dot.addEventListener('click',e=>{e.stopPropagation();op=op===val?null:val;renderLeg()});
+    wrap.appendChild(dot);
+    if(op===val){
+      const pop=document.createElement('div');pop.className='cp-pop';
+      pop.innerHTML='<div class="cp-title">Choose a color</div>';
+      const sw=document.createElement('div');sw.className='cp-sw';
+      SWC.forEach(c=>{const s2=document.createElement('div');s2.className='cp-s'+(c===color?' sel':'');s2.style.background=c;s2.addEventListener('click',e=>{e.stopPropagation();setC(val,c)});sw.appendChild(s2)});
+      pop.appendChild(sw);
+      const cr=document.createElement('div');cr.className='cp-cust';cr.innerHTML='<label>Custom:</label>';
+      const inp=document.createElement('input');inp.type='color';inp.value=color;
+      inp.addEventListener('input',e=>{e.stopPropagation();setC(val,e.target.value)});
+      inp.addEventListener('click',e=>e.stopPropagation());
+      cr.appendChild(inp);pop.appendChild(cr);
+      const shTitle=document.createElement('div');shTitle.className='cp-title2';shTitle.textContent='Choose a shape';
+      pop.appendChild(shTitle);
+      const shWrap=document.createElement('div');shWrap.className='cp-shapes';
+      const curShape=shp[val]||'circle';
+      SHAPES.forEach(sh=>{
+        const b=document.createElement('button');b.type='button';
+        b.className='cp-shape-btn'+(curShape===sh?' sel':'');
+        b.title=SHAPE_LABELS[sh];
+        b.innerHTML=shapeSVG(sh,'#666',16,1.5,'#fff',false);
+        b.addEventListener('click',e=>{e.stopPropagation();setShape(val,sh)});
+        shWrap.appendChild(b);
+      });
+      pop.appendChild(shWrap);
+      wrap.appendChild(pop);
+    }
+    const lbl=document.createElement('span');lbl.className='leg-lbl';
+    // In correlation mode, highlight the two parts differently
+    if(cf2){
+      const parts=val.split(' · ');
+      lbl.innerHTML=`<span style="font-weight:600">${parts[0]}</span><span style="color:#888;font-size:.90em"> · ${parts.slice(1).join(' · ')}</span>`;
+    } else {
+      lbl.textContent=val;
+    }
+    lbl.title='Filter by this value';lbl.addEventListener('click',()=>togF(val));
+    const badge=document.createElement('span');badge.className='leg-nbadge';
+    const cnt=countForVal(val);
+    badge.textContent=cnt;
+    if(cnt===0){badge.style.background='#bbb';item.style.opacity='0.45';}
+    item.appendChild(wrap);item.appendChild(lbl);item.appendChild(badge);
+    s.appendChild(item);
+  });
+  updateClearBtn();
+}
+function setC(val,color){cm[val]=color;refreshIcons();renderLeg();renderLL(document.getElementById('srch').value)}
+function setShape(val,shape){shp[val]=shape;refreshIcons();renderLeg();renderLL(document.getElementById('srch').value)}
+function togF(val){av.has(val)?av.delete(val):av.add(val);applyF();renderLeg();renderLL(document.getElementById('srch').value)}
+function updateClearBtn(){const btn=document.getElementById('btn-clear-filter');if(btn)btn.style.display=av.size>0?'':'none';}
+
+/* ── OVERLAP JITTER ─────────────────────────────────────────────────────── */
+// Returns jittered positions for markers that overlap, with connector lines to real position
+/* ── OVERLAP JITTER ─────────────────────────────────────────────────────── */
+// Iterative jitter: places displaced markers and re-checks for secondary collisions,
+// trying different angles until no overlap remains (or max iterations reached).
+function computeJitter(dataArr){
+  const THRESH=0.09;    // reduced sensitivity (was 0.18)
+  const SPREAD=0.0625;   // 50% less (was 0.125)
+  const MAX_ITER=16;   // max angle attempts per point
+
+  // Start: all points at their real position
+  const pos=dataArr.map(d=>({lat:d.lat,lng:d.lng,realLat:d.lat,realLng:d.lng,hasOffset:false}));
+
+  // Find all groups of points whose REAL positions are close
+  const realGroups=[];
+  const seen=new Set();
+  dataArr.forEach((d,i)=>{
+    if(seen.has(i))return;
+    const grp=[i];
+    dataArr.forEach((d2,j)=>{
+      if(j===i||seen.has(j))return;
+      if(Math.abs(d.lat-d2.lat)<THRESH&&Math.abs(d.lng-d2.lng)<THRESH)grp.push(j);
+    });
+    if(grp.length>1){grp.forEach(k=>seen.add(k));realGroups.push(grp);}
+  });
+
+  // For each group, assign initial angles and then resolve secondary collisions
+  realGroups.forEach(grp=>{
+    const n=grp.length;
+    // assign initial evenly-spaced angles
+    const angles=grp.map((_,k)=>(2*Math.PI*k)/n - Math.PI/2);
+
+    // Iteratively check and adjust: if a displaced point collides with ANY other
+    // displaced point (from any group), rotate it by a small step
+    for(let iter=0;iter<MAX_ITER;iter++){
+      let anyCollision=false;
+      grp.forEach((idx,k)=>{
+        const tryLat=dataArr[idx].lat+Math.sin(angles[k])*SPREAD;
+        const tryLng=dataArr[idx].lng+Math.cos(angles[k])*SPREAD;
+        // check against all already-placed displaced positions
+        let collision=false;
+        pos.forEach((p,j)=>{
+          if(j===idx||!p.hasOffset)return;
+          if(Math.abs(p.lat-tryLat)<THRESH*0.8&&Math.abs(p.lng-tryLng)<THRESH*0.8)collision=true;
+        });
+        if(collision){angles[k]+=Math.PI/8;anyCollision=true;}
+        else{pos[idx].lat=tryLat;pos[idx].lng=tryLng;pos[idx].hasOffset=true;}
+      });
+      if(!anyCollision)break;
+    }
+    // Final placement
+    grp.forEach((idx,k)=>{
+      pos[idx].lat=dataArr[idx].lat+Math.sin(angles[k])*SPREAD;
+      pos[idx].lng=dataArr[idx].lng+Math.cos(angles[k])*SPREAD;
+      pos[idx].hasOffset=true;
+    });
+  });
+
+  return pos;
+}
+
+let connectorLines=[];
+function clearConnectors(){connectorLines.forEach(l=>map.removeLayer(l));connectorLines=[];}
+
+function detRows(d){
+  let r='';
+  if(d.coordSource==='glottolog')r+=`<tr><td>Coordinates</td><td>Glottolog (Excel had none/invalid)</td></tr>`;
+  if(d.coordSource==='grambank')r+=`<tr><td>Source</td><td>Grambank (added for context)</td></tr>`;
+  Object.entries(FL).forEach(([k,l])=>r+=`<tr><td>${l}</td><td>${gv(d,k)}</td></tr>`);
+  return r;
+}
+function renderLL(flt=''){
+  const list=document.getElementById('ll');list.innerHTML='';
+  const lf=flt.toLowerCase();
+  let count=0;
+  DATA.forEach((d,i)=>{
+    const nm=d.L.trim();
+    const searchable=(nm+' '+(d.V||'')).toLowerCase();
+    if(lf&&!searchable.includes(lf))return;
+    count++;
+    const val=corrKey(d);const color=cm[val]||'#888';
+    const vis=av.size===0||av.has(val);const xp=xi===i;
+    const item=document.createElement('div');
+    item.className='ll-item'+(xp?' xp':'');item.style.opacity=vis?'1':'.28';
+    const sym=document.createElement('div');sym.className='ll-sym';
+    const dt=document.createElement('div');dt.className='ll-dot';dt.innerHTML=shapeSVG(shp[val]||'circle',color,11,1.5,'rgba(255,255,255,.7)');sym.appendChild(dt);
+    const ns=document.createElement('span');ns.className='ll-name';ns.textContent=nm;
+    if(d.V){
+      const vv=document.createElement('span');
+      vv.style.cssText='font-size:1em;color:#999;margin-left:5px;font-style:italic';
+      vv.textContent=d.V;ns.appendChild(vv);
+    }
+    if(cf2){
+      const v2=document.createElement('span');
+      v2.style.cssText='font-size:.58rem;color:#888;margin-left:3px;font-style:italic;white-space:nowrap';
+      v2.textContent=gv(d,cf2);ns.appendChild(v2);
+    }
+    const ch=document.createElement('span');ch.className='ll-chev';ch.textContent='▶';
+    item.appendChild(sym);item.appendChild(ns);item.appendChild(ch);
+    item.addEventListener('click',()=>{
+      xi=xi===i?null:i;
+      if(xi===i){
+        map.setView([d.lat,d.lng],Math.max(map.getZoom(),7));
+        setTimeout(()=>mkrs[i]&&mkrs[i].openPopup(),300);
+      }
+      renderLL(document.getElementById('srch').value);
+    });
+    list.appendChild(item);
+    if(xp){
+      const det=document.createElement('div');det.className='ll-det on';
+      det.innerHTML=`<table>${detRows(d)}</table>`;list.appendChild(det);
+    }
+  });
+  document.getElementById('ll-count').textContent=count||DATA.length;
+}
+
+/* ── DOWNLOAD — pure canvas tile renderer ─────────────────────────────── */
+// World geographic bounds (Mercator clamps ~±85°)
+const BNDS={minLat:-75, maxLat:80, minLng:-180, maxLng:180};
+
+function lng2tile(lng,z){return Math.floor((lng+180)/360*Math.pow(2,z))}
+function lat2tile(lat,z){return Math.floor((1-Math.log(Math.tan(lat*Math.PI/180)+1/Math.cos(lat*Math.PI/180))/Math.PI)/2*Math.pow(2,z))}
+function latlng2px(lat,lng,txOrig,tyOrig,z,TILE){
+  const n=Math.pow(2,z);
+  const px=(lng+180)/360*n*TILE-txOrig*TILE;
+  const latR=lat*Math.PI/180;
+  const py=(1-Math.log(Math.tan(latR)+1/Math.cos(latR))/Math.PI)/2*n*TILE-tyOrig*TILE;
+  return[px,py];
+}
+function loadImg(url){return new Promise(res=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>res(i);i.onerror=()=>res(null);i.src=url;})}
+
+function globalPx(lat,lng,z,TILE){
+  const n=Math.pow(2,z);
+  const px=(lng+180)/360*n*TILE;
+  const latC=Math.max(-85.05,Math.min(85.05,lat));
+  const latR=latC*Math.PI/180;
+  const py=(1-Math.log(Math.tan(latR)+1/Math.cos(latR))/Math.PI)/2*n*TILE;
+  return[px,py];
+}
+// Inverse of globalPx: pixel coordinates (at a given tile zoom) back to lat/lng
+function pxToLatLng(px,py,z,TILE){
+  const n=Math.pow(2,z);
+  let lng=px/(n*TILE)*360-180;
+  lng=((lng+540)%360)-180; // normalise to [-180,180]
+  const y=py/(n*TILE);
+  const latR=Math.atan(Math.sinh(Math.PI*(1-2*y)));
+  const lat=latR*180/Math.PI;
+  return[lat,lng];
+}
+// Geometry (tile zoom + crop size in px) for a given effective zoom level and aspect
+// ratio — shared by the exporter, the preview, and the focus-shift controls so they
+// all agree on exactly the same numbers
+function exportGeometry(zoomLevel,ratio){
+  const TILE=256, outW=1400;
+  const[rw,rh]=ratio.split(':').map(Number);
+  const outH=Math.round(outW*rh/rw);
+  const kmWidthM=kmForZoomLevel(zoomLevel)*1000;
+  const idealZoom=Math.log2(156543.03392*outW/kmWidthM);
+  const tileZoom=Math.max(0,Math.min(18,Math.round(idealZoom)));
+  const metersPerPx=156543.03392/Math.pow(2,tileZoom);
+  const cropW=kmWidthM/metersPerPx;
+  const cropH=cropW*outH/outW;
+  return{TILE,outW,outH,tileZoom,cropW,cropH};
+}
+
+/* Icon / legend size presets for the downloaded map.
+   "medium" is kept as the exact midpoint between "small" and "large" for every field. */
+const ICON_SIZES={
+  small:{R:6, legendScale:1,    standaloneScale:1.6},
+  medium:{R:10.5, legendScale:1.45, standaloneScale:2.15},
+  large:{R:15, legendScale:1.9, standaloneScale:2.7}
+};
+/* The legend (box, text and swatches) is always rendered 20% larger than the chosen size preset would
+   otherwise produce — applied on top of the presets above, for both the embedded and the standalone legend. */
+const LEGEND_BOOST=1.2;
+
+/* Draws a marker shape (with a white halo) onto a canvas context, centred at (cx,cy) with "radius" r */
+function drawMarkerShape(ctx,shape,cx,cy,r,color,haloColor='rgba(255,255,255,0.82)',haloExtra=1.5){
+  function tracePath(rad){
+    ctx.beginPath();
+    if(shape==='square'){
+      const s=rad*1.55*1.15, rr=s*0.16, x=cx-s/2, y=cy-s/2; // 15% bigger than the other shapes on the downloaded map
+      ctx.moveTo(x+rr,y);ctx.lineTo(x+s-rr,y);ctx.quadraticCurveTo(x+s,y,x+s,y+rr);
+      ctx.lineTo(x+s,y+s-rr);ctx.quadraticCurveTo(x+s,y+s,x+s-rr,y+s);
+      ctx.lineTo(x+rr,y+s);ctx.quadraticCurveTo(x,y+s,x,y+s-rr);
+      ctx.lineTo(x,y+rr);ctx.quadraticCurveTo(x,y,x+rr,y);
+      ctx.closePath();
+    } else if(shape==='diamond'){
+      const s=rad*1.28;
+      ctx.moveTo(cx,cy-s);ctx.lineTo(cx+s,cy);ctx.lineTo(cx,cy+s);ctx.lineTo(cx-s,cy);ctx.closePath();
+    } else if(shape==='triangle'){
+      const s=rad*1.4;
+      ctx.moveTo(cx,cy-s);ctx.lineTo(cx+s*0.96,cy+s*0.72);ctx.lineTo(cx-s*0.96,cy+s*0.72);ctx.closePath();
+    } else if(shape==='triangle-down'){
+      const s=rad*1.4;
+      ctx.moveTo(cx,cy+s);ctx.lineTo(cx+s*0.96,cy-s*0.72);ctx.lineTo(cx-s*0.96,cy-s*0.72);ctx.closePath();
+    } else {
+      ctx.arc(cx,cy,rad,0,Math.PI*2);
+    }
+  }
+  tracePath(r+haloExtra);ctx.fillStyle=haloColor;ctx.fill();
+  tracePath(r);ctx.fillStyle=color;ctx.fill();
+}
+
+/* Shared legend metrics — used both for the on-map legend and the standalone export */
+function buildLegendMetrics(ctx,scale=1){
+  const selTxt=cf2
+    ? `${document.getElementById('feat-sel').options[document.getElementById('feat-sel').selectedIndex].text} · ${document.getElementById('corr-sel').options[document.getElementById('corr-sel').selectedIndex].text}`
+    : document.getElementById('feat-sel').options[document.getElementById('feat-sel').selectedIndex].text;
+  const sorted=Object.entries(cm).sort((a,b)=>countForVal(b[0])-countForVal(a[0]));
+  const pad=14*scale, lh=24*scale, dotR=8*scale;
+  const titleFs=14*scale, entFs=13*scale;
+  const maxBoxW=260*scale;
+  const textX=dotR*2+8*scale;
+  const maxTextW=maxBoxW-pad*2-textX;
+  function wrapText(text,maxW){
+    const words=text.split(' ');const lines=[];let cur='';
+    for(const w of words){
+      const test=cur?cur+' '+w:w;
+      if(ctx.measureText(test).width>maxW&&cur){lines.push(cur);cur=w;}
+      else cur=test;
+    }
+    if(cur)lines.push(cur);
+    return lines;
+  }
+  // title itself may need to wrap onto more than one line when very long
+  ctx.font=`bold ${titleFs}px Arial,sans-serif`;
+  const titleLines=wrapText(selTxt,maxTextW+textX);
+  ctx.font=`${entFs}px Arial,sans-serif`;
+  const entryLines=sorted.map(([val])=>wrapText(`${val} (${countForVal(val)})`,maxTextW));
+  ctx.font=`bold ${titleFs}px Arial,sans-serif`;
+  let maxW=Math.min(Math.max(...titleLines.map(l=>ctx.measureText(l).width)),maxBoxW-pad*2);
+  ctx.font=`${entFs}px Arial,sans-serif`;
+  entryLines.forEach(lines=>lines.forEach(line=>{
+    const w=ctx.measureText(line).width+textX;
+    if(w>maxW)maxW=Math.min(w,maxBoxW-pad*2);
+  }));
+  const bw=maxW+pad*2;
+  const titleLH=titleFs*1.25;
+  const titleH=titleLines.length*titleLH+pad*1.4;
+  const totalEntryLines=entryLines.reduce((s,ls)=>s+ls.length,0);
+  const bh=titleH+totalEntryLines*lh+pad;
+  return{sorted,entryLines,titleLines,pad,lh,dotR,titleFs,titleLH,entFs,textX,bw,bh,titleH};
+}
+function drawLegendBox(ctx,bx,by,m,scale=1){
+  const br=6*scale;
+  const rr=(x,y,w,h,r)=>{ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();};
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,0.22)';ctx.shadowBlur=18*scale;ctx.shadowOffsetX=2*scale;ctx.shadowOffsetY=3*scale;
+  ctx.fillStyle='rgba(255,255,255,0.97)';
+  rr(bx,by,m.bw,m.bh,br);ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle='rgba(0,0,0,0.07)';ctx.lineWidth=1.5*scale;
+  rr(bx,by,m.bw,m.bh,br);ctx.stroke();
+  // title (may wrap to several lines)
+  ctx.fillStyle='#4a6741';
+  ctx.font=`bold ${m.titleFs}px Arial,sans-serif`;
+  m.titleLines.forEach((line,li)=>{
+    ctx.fillText(line,bx+m.pad,by+m.pad+m.titleFs*0.82+li*m.titleLH);
+  });
+  // entries
+  let curY=by+m.titleH;
+  m.sorted.forEach(([val,color],idx)=>{
+    const lines=m.entryLines[idx];
+    const ex=bx+m.pad;
+    const ey=curY+m.lh*0.5;
+    drawMarkerShape(ctx,shp[val]||'circle',ex+m.dotR,ey,m.dotR,color,'rgba(255,255,255,0.75)',2);
+    ctx.fillStyle='#2c2c2c';
+    ctx.font=`${m.entFs}px Arial,sans-serif`;
+    lines.forEach((line,li)=>{
+      ctx.fillText(line, ex+m.textX, curY+m.lh*(li+0.5)+m.entFs*0.36);
+    });
+    curY+=m.lh*lines.length;
+  });
+}
+
+/* Standalone legend-only image (own canvas, sized to fit exactly, transparent margin for the shadow) */
+function generateLegendImage(iconSize='small'){
+  const sp=ICON_SIZES[iconSize]||ICON_SIZES.small;
+  const scale=sp.standaloneScale*LEGEND_BOOST;
+  const probe=document.createElement('canvas').getContext('2d');
+  const m=buildLegendMetrics(probe,scale);
+  const margin=Math.round(16*scale/1.6);
+  const out=document.createElement('canvas');
+  out.width=m.bw+margin*2;out.height=m.bh+margin*2;
+  const octx=out.getContext('2d');
+  drawLegendBox(octx,margin,margin,m,scale);
+  return out;
+}
+
+/* Continuous zoom scale used by the download dialog: level 0 = full-world extent,
+   level 10 ≈ the size of Catalonia (~220 km across). Levels in between follow a geometric
+   progression, so each whole step covers a consistently smaller fraction of the previous one. */
+const ZOOM_WORLD_KM=40075, ZOOM_L10_KM=220;
+const ZOOM_RATIO=Math.pow(ZOOM_L10_KM/ZOOM_WORLD_KM,1/10);
+function kmForZoomLevel(level){
+  const lvl=Math.max(0,Math.min(10,level));
+  return ZOOM_WORLD_KM*Math.pow(ZOOM_RATIO,lvl);
+}
+
+async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconSize='small', centerLat, centerLng}={}){
+  const sp=ICON_SIZES[iconSize]||ICON_SIZES.small;
+  const{TILE,outW,outH,tileZoom,cropW,cropH}=exportGeometry(zoomLevel,ratio);
+
+  // Fall back to the current data's bounding-box centroid only if no explicit
+  // center was given (should not normally happen — kept as a safety net)
+  if(typeof centerLat!=='number'||typeof centerLng!=='number'){
+    const lats=DATA.map(d=>d.lat), lngs=DATA.map(d=>d.lng);
+    centerLat=(Math.min(...lats)+Math.max(...lats))/2;
+    centerLng=(Math.min(...lngs)+Math.max(...lngs))/2;
+  }
+
+  const[cx,cy]=globalPx(centerLat,centerLng,tileZoom,TILE);
+
+  const left=cx-cropW/2, top=cy-cropH/2;
+  const nTiles=Math.pow(2,tileZoom);
+  let txMin=Math.floor(left/TILE), txMax=Math.floor((left+cropW-1)/TILE);
+  let tyMin=Math.floor(top/TILE), tyMax=Math.floor((top+cropH-1)/TILE);
+  tyMin=Math.max(0,tyMin); tyMax=Math.min(nTiles-1,tyMax);
+
+  const gridW=(txMax-txMin+1)*TILE, gridH=(tyMax-tyMin+1)*TILE;
+  const full=document.createElement('canvas');full.width=gridW;full.height=gridH;
+  const fctx=full.getContext('2d');
+  const subs=['a','b','c','d'];
+  await Promise.all(
+    Array.from({length:(txMax-txMin+1)*(tyMax-tyMin+1)},(_,k)=>{
+      const tx=txMin+Math.floor(k/(tyMax-tyMin+1));
+      const tyRaw=tyMin+(k%(tyMax-tyMin+1));
+      const tx2=((tx%nTiles)+nTiles)%nTiles; // wrap horizontally
+      const s=subs[(tx2+tyRaw)%4];
+      return loadImg(`https://${s}.basemaps.cartocdn.com/light_nolabels/${tileZoom}/${tx2}/${tyRaw}.png`)
+        .then(img=>{if(img)fctx.drawImage(img,(tx-txMin)*TILE,(tyRaw-tyMin)*TILE,TILE,TILE)});
+    })
+  );
+
+  // Crop the fetched tile grid to the requested physical extent and rescale it to the fixed
+  // output resolution in a single step
+  const out=document.createElement('canvas');out.width=outW;out.height=outH;
+  const octx=out.getContext('2d');
+  const srcX=left-txMin*TILE, srcY=top-tyMin*TILE;
+  octx.drawImage(full, srcX, srcY, cropW, cropH, 0, 0, outW, outH);
+
+  // Maps a geographic coordinate straight to final output-canvas pixel space, independent of
+  // the basemap tile-zoom used above — this keeps marker sizes correct at every zoom level
+  const scaleX=outW/cropW, scaleY=outH/cropH;
+  function geo2out(lat,lng){
+    const[px,py]=globalPx(lat,lng,tileZoom,TILE);
+    return [(px-left)*scaleX,(py-top)*scaleY];
+  }
+
+  // draw language markers
+  const R=sp.R;
+  const dpx=DATA.map(d=>geo2out(d.lat,d.lng));
+  const PTHRESH=R*1.75;
+  const PSPREAD=R*0.6875;
+  const MAX_ITER=16;
+
+  const dpxPos=dpx.map(([px,py])=>({px,py,rpx:px,rpy:py,off:false}));
+  const dpxSeen=new Set();
+  const dpxGroups=[];
+  dpx.forEach(([px,py],i)=>{
+    if(dpxSeen.has(i))return;
+    const grp=[i];
+    dpx.forEach(([px2,py2],j)=>{
+      if(j===i||dpxSeen.has(j))return;
+      if(Math.hypot(px-px2,py-py2)<PTHRESH)grp.push(j);
+    });
+    if(grp.length>1){grp.forEach(k=>dpxSeen.add(k));dpxGroups.push(grp);}
+  });
+
+  dpxGroups.forEach(grp=>{
+    const n=grp.length;
+    const angles=grp.map((_,k)=>(2*Math.PI*k)/n - Math.PI/2);
+    for(let iter=0;iter<MAX_ITER;iter++){
+      let anyCol=false;
+      grp.forEach((idx,k)=>{
+        const tryX=dpx[idx][0]+Math.cos(angles[k])*PSPREAD;
+        const tryY=dpx[idx][1]+Math.sin(angles[k])*PSPREAD;
+        let col=false;
+        dpxPos.forEach((p,j)=>{if(j===idx||!p.off)return;if(Math.hypot(p.px-tryX,p.rpy-tryY)<PTHRESH*0.8)col=true;});
+        if(col){angles[k]+=Math.PI/8;anyCol=true;}
+        else{dpxPos[idx].px=tryX;dpxPos[idx].py=tryY;dpxPos[idx].off=true;}
+      });
+      if(!anyCol)break;
+    }
+    grp.forEach((idx,k)=>{
+      dpxPos[idx].px=dpx[idx][0]+Math.cos(angles[k])*PSPREAD;
+      dpxPos[idx].py=dpx[idx][1]+Math.sin(angles[k])*PSPREAD;
+      dpxPos[idx].off=true;
+    });
+  });
+
+  dpxPos.forEach(({px,py,rpx,rpy,off})=>{
+    if(!off)return;
+    octx.beginPath();octx.moveTo(rpx,rpy);octx.lineTo(px,py);
+    octx.strokeStyle='rgba(80,80,80,0.55)';octx.lineWidth=1;octx.stroke();
+  });
+  DATA.forEach((d,i)=>{
+    const val=corrKey(d); const color=cm[val]||'#888';
+    const{px,py}=dpxPos[i];
+    drawMarkerShape(octx,shp[val]||'circle',px,py,R,color);
+  });
+
+  if(legendPos!=='none'){
+    const legScale=sp.legendScale*LEGEND_BOOST;
+    const m=buildLegendMetrics(octx,legScale);
+    const margin=10*legScale;
+    const bx=legendPos.includes('r') ? out.width-m.bw-margin : margin;
+    const by=legendPos.includes('b') ? out.height-m.bh-margin : margin;
+    drawLegendBox(octx,bx,by,m,legScale);
+  }
+  return out;
+}
+
+/* ── DOWNLOAD SETTINGS PERSISTENCE ─────────────────────────────────────── */
+const DL_SETTINGS_KEY='intymavi-download-settings';
+function loadDLSettings(){
+  try{
+    const raw=localStorage.getItem(DL_SETTINGS_KEY);
+    if(raw){const s=JSON.parse(raw);if(s&&s.zoom&&s.ratio&&s.legendPos)return s;}
+  }catch(e){}
+  return{zoom:'4',zoomFine:0,centerLat:null,centerLng:null,ratio:'4:3',legendPos:'tl',legendSeparate:false,iconSize:'small'};
+}
+function saveDLSettings(s){try{localStorage.setItem(DL_SETTINGS_KEY,JSON.stringify(s))}catch(e){}}
+
+// The center used for the export/preview is an ABSOLUTE lat/lng (not a pan offset
+// relative to whatever data happens to be loaded) so that saved/loaded view-settings
+// files reproduce exactly the same framing every time, regardless of dataset changes.
+let dlLegendPos='tl', dlCenterLat=null, dlCenterLng=null;
+function dataCentroid(){
+  const lats=DATA.map(d=>d.lat), lngs=DATA.map(d=>d.lng);
+  return[(Math.min(...lats)+Math.max(...lats))/2,(Math.min(...lngs)+Math.max(...lngs))/2];
+}
+function applyDLSettingsToModal(){
+  const s=loadDLSettings();
+  document.getElementById('dl-zoom').value=s.zoom;
+  document.getElementById('dl-zoom-fine').value=s.zoomFine||0;
+  document.getElementById('dl-ratio').value=s.ratio;
+  document.getElementById('dl-size').value=s.iconSize||'small';
+  document.getElementById('dl-legend-separate').checked=!!s.legendSeparate;
+  dlLegendPos=s.legendPos;
+  if(typeof s.centerLat==='number'&&typeof s.centerLng==='number'){
+    dlCenterLat=s.centerLat; dlCenterLng=s.centerLng;
+  }else{
+    [dlCenterLat,dlCenterLng]=dataCentroid();
+  }
+  document.querySelectorAll('#legpos-grid [data-pos]').forEach(b=>{
+    b.classList.toggle('sel',b.dataset.pos===dlLegendPos);
+  });
+  updateZoomFineLabel();
+}
+function effectiveZoomLevel(){
+  const preset=parseFloat(document.getElementById('dl-zoom').value);
+  const fine=parseFloat(document.getElementById('dl-zoom-fine').value);
+  return Math.max(0,Math.min(10,preset+fine));
+}
+function updateZoomFineLabel(){
+  const v=parseFloat(document.getElementById('dl-zoom-fine').value);
+  document.getElementById('dl-zoom-fine-val').textContent=(v>=0?'+':'')+v.toFixed(2);
+}
+
+// Reads the modal's current controls into a plain settings object (same shape
+// used both for localStorage persistence and for the exportable JSON file)
+function currentDLSettings(){
+  return{
+    zoom:document.getElementById('dl-zoom').value,
+    zoomFine:parseFloat(document.getElementById('dl-zoom-fine').value),
+    centerLat:dlCenterLat,centerLng:dlCenterLng,
+    ratio:document.getElementById('dl-ratio').value,
+    legendPos:dlLegendPos,
+    legendSeparate:document.getElementById('dl-legend-separate').checked,
+    iconSize:document.getElementById('dl-size').value
+  };
+}
+// Applies a settings object (from a file or from localStorage) to the modal's controls
+function applySettingsObjectToModal(s){
+  document.getElementById('dl-zoom').value=s.zoom!==undefined?s.zoom:'4';
+  document.getElementById('dl-zoom-fine').value=s.zoomFine||0;
+  document.getElementById('dl-ratio').value=s.ratio||'4:3';
+  document.getElementById('dl-size').value=s.iconSize||'small';
+  document.getElementById('dl-legend-separate').checked=!!s.legendSeparate;
+  dlLegendPos=s.legendPos||'tl';
+  if(typeof s.centerLat==='number'&&typeof s.centerLng==='number'){
+    dlCenterLat=s.centerLat; dlCenterLng=s.centerLng;
+  }else{
+    // Older file/format without an absolute center: best effort, recentres on current data
+    [dlCenterLat,dlCenterLng]=dataCentroid();
+  }
+  document.querySelectorAll('#legpos-grid [data-pos]').forEach(b=>{
+    b.classList.toggle('sel',b.dataset.pos===dlLegendPos);
+  });
+  updateZoomFineLabel();
+}
+
+document.getElementById('dl-save-view').addEventListener('click',()=>{
+  const s=currentDLSettings();
+  const payload={type:'intymavi-view-settings',version:1,savedAt:new Date().toISOString(),...s};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.download=`intymavi_view_zoom${effectiveZoomLevel().toFixed(2)}.json`;
+  a.href=URL.createObjectURL(blob);
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const st=document.getElementById('dl-view-io-status');
+  st.textContent='✅ View settings saved.';
+  setTimeout(()=>{if(st.textContent==='✅ View settings saved.')st.textContent='';},2500);
+});
+
+document.getElementById('dl-load-view').addEventListener('click',()=>document.getElementById('dl-view-file').click());
+document.getElementById('dl-view-file').addEventListener('change',e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  const st=document.getElementById('dl-view-io-status');
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const s=JSON.parse(ev.target.result);
+      if(!s||typeof s!=='object')throw new Error('This does not look like a view-settings file.');
+      applySettingsObjectToModal(s);
+      saveDLSettings(currentDLSettings()); // also remember it for next time in this browser
+      schedulePreview(true);
+      st.textContent=`✅ View loaded from "${file.name}".`;
+    }catch(err){
+      st.textContent='❌ Could not load this file: '+err.message;
+    }
+  };
+  reader.readAsText(file);
+  e.target.value='';
+});
+
+document.getElementById('btn-dl').addEventListener('click',()=>{
+  if(!hasData){alert('Please load an Excel file with data first.');return;}
+  applyDLSettingsToModal();
+  document.getElementById('legpos-modal').classList.add('on');
+  schedulePreview(true);
+});
+
+document.getElementById('legpos-cancel').addEventListener('click',()=>{
+  document.getElementById('legpos-modal').classList.remove('on');
+});
+
+document.getElementById('legpos-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('legpos-modal'))
+    document.getElementById('legpos-modal').classList.remove('on');
+});
+
+document.querySelectorAll('#legpos-grid [data-pos]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    dlLegendPos=btn.dataset.pos;
+    document.querySelectorAll('#legpos-grid [data-pos]').forEach(b=>b.classList.toggle('sel',b===btn));
+    schedulePreview();
+  });
+});
+
+document.getElementById('dl-zoom').addEventListener('change',()=>{
+  document.getElementById('dl-zoom-fine').value=0;
+  updateZoomFineLabel();
+  schedulePreview();
+});
+document.getElementById('dl-zoom-fine').addEventListener('input',()=>{
+  updateZoomFineLabel();
+  schedulePreview();
+});
+document.getElementById('dl-ratio').addEventListener('change',()=>schedulePreview());
+document.getElementById('dl-size').addEventListener('change',()=>schedulePreview());
+
+document.querySelectorAll('.dl-focus-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const dir=btn.dataset.dir;
+    if(dir==='center'){
+      [dlCenterLat,dlCenterLng]=dataCentroid();
+    }else{
+      const step=0.08;
+      const zoomLevel=effectiveZoomLevel();
+      const ratio=document.getElementById('dl-ratio').value;
+      const{TILE,tileZoom,cropW,cropH}=exportGeometry(zoomLevel,ratio);
+      let fracX=0,fracY=0;
+      if(dir==='left')fracX=-step; else if(dir==='right')fracX=step;
+      else if(dir==='up')fracY=-step; else if(dir==='down')fracY=step;
+      const[cx,cy]=globalPx(dlCenterLat,dlCenterLng,tileZoom,TILE);
+      const[nlat,nlng]=pxToLatLng(cx+fracX*cropW,cy+fracY*cropH,tileZoom,TILE);
+      dlCenterLat=nlat; dlCenterLng=nlng;
+    }
+    schedulePreview();
+  });
+});
+
+/* ── LIVE PREVIEW ───────────────────────────────────────────────────────── */
+let previewTimer=null, previewToken=0;
+function schedulePreview(immediate=false){
+  clearTimeout(previewTimer);
+  previewTimer=setTimeout(runPreview, immediate?0:250);
+}
+async function runPreview(){
+  const token=++previewToken;
+  const frame=document.getElementById('dl-preview-frame');
+  const img=document.getElementById('dl-preview-img');
+  const loading=document.getElementById('dl-preview-loading');
+  const zoomLevel=effectiveZoomLevel();
+  const ratio=document.getElementById('dl-ratio').value;
+  const iconSize=document.getElementById('dl-size').value;
+  const legendPos=dlLegendPos;
+  const[rw,rh]=ratio.split(':').map(Number);
+  frame.style.height=Math.round(frame.clientWidth*rh/rw)+'px';
+  loading.textContent='Generating preview…';
+  loading.style.display='flex';
+  try{
+    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,centerLat:dlCenterLat,centerLng:dlCenterLng});
+    if(token!==previewToken)return; // a newer preview request has superseded this one
+    img.src=canvas.toDataURL('image/png');
+    img.style.display='block';
+    loading.style.display='none';
+  }catch(e){
+    if(token!==previewToken)return;
+    loading.textContent='Preview unavailable';
+  }
+}
+
+document.getElementById('dl-go').addEventListener('click',async()=>{
+  const zoomLevel=effectiveZoomLevel();
+  const ratio=document.getElementById('dl-ratio').value;
+  const iconSize=document.getElementById('dl-size').value;
+  const legendSeparate=document.getElementById('dl-legend-separate').checked;
+  const legendPos=dlLegendPos;
+  saveDLSettings(currentDLSettings());
+
+  document.getElementById('legpos-modal').classList.remove('on');
+  const ov=document.getElementById('cap-ov');ov.classList.add('on');
+  try{
+    const baseName=cf2?`Map_${FL[cf]||cf}_x_${FL[cf2]||cf2}`:`Map_${FL[cf]||cf}`;
+    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,centerLat:dlCenterLat,centerLng:dlCenterLng});
+    const a=document.createElement('a');
+    a.download=`${baseName}.png`;
+    a.href=canvas.toDataURL('image/png');
+    a.click();
+    if(legendSeparate){
+      const legCanvas=generateLegendImage(iconSize);
+      const b=document.createElement('a');
+      b.download=`${baseName}_legend.png`;
+      b.href=legCanvas.toDataURL('image/png');
+      setTimeout(()=>b.click(),300);
+    }
+  }catch(e){alert('Error generating the map: '+e.message)}
+  finally{ov.classList.remove('on')}
+});
+
+/* ── EXCEL IMPORT ───────────────────────────────────────────────────────── */
+document.getElementById('btn-import').addEventListener('click',()=>{
+  document.getElementById('import-modal').classList.add('on');
+});
+document.getElementById('modal-cancel').addEventListener('click',()=>{
+  document.getElementById('import-modal').classList.remove('on');
+  document.getElementById('modal-status').textContent='';
+});
+// close on backdrop
+document.getElementById('import-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('import-modal')){
+    document.getElementById('import-modal').classList.remove('on');
+    document.getElementById('modal-status').textContent='';
+  }
+});
+// dropzone click → file input
+document.getElementById('dropzone').addEventListener('click',()=>document.getElementById('file-input').click());
+// drag
+const dz=document.getElementById('dropzone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');handleFile(e.dataTransfer.files[0])});
+document.getElementById('file-input').addEventListener('change',e=>handleFile(e.target.files[0]));
+
+/* ── GLOTTOLOG GEO CSV IMPORT (optional coordinate fallback) ─────────────── */
+document.getElementById('geo-dropzone').addEventListener('click',()=>document.getElementById('geo-file-input').click());
+const gdz=document.getElementById('geo-dropzone');
+gdz.addEventListener('dragover',e=>{e.preventDefault();gdz.classList.add('drag')});
+gdz.addEventListener('dragleave',()=>gdz.classList.remove('drag'));
+gdz.addEventListener('drop',e=>{e.preventDefault();gdz.classList.remove('drag');handleGeoFile(e.dataTransfer.files[0])});
+document.getElementById('geo-file-input').addEventListener('change',e=>handleGeoFile(e.target.files[0]));
+document.getElementById('geo-clear').addEventListener('click',()=>{
+  GEO={};
+  document.getElementById('geo-status').textContent='';
+  document.getElementById('geo-dz-label').innerHTML='Drag the Glottolog CSV here<br><small>or click to select it</small>';
+  document.getElementById('geo-clear').classList.remove('on');
+  document.getElementById('geo-file-input').value='';
+  if(RAWROWS.length){
+    const parsed=resolveCoords(RAWROWS);
+    DATA=parsed;
+    cm=buildCM(cf,cf2);
+    renderMkrs();renderLeg();renderLL(document.getElementById('srch').value);
+    document.getElementById('ll-count').textContent=DATA.length;
+  }
+});
+
+function handleGeoFile(file){
+  if(!file)return;
+  const status=document.getElementById('geo-status');
+  status.textContent='Reading file…';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:false});
+      if(!rows.length){status.textContent='❌ The file is empty.';return;}
+      const allCols=Object.keys(rows[0]);
+      const normCol=c=>c.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+      const findCol=aliases=>{const set=new Set(aliases);return allCols.find(c=>set.has(normCol(c)))||null};
+      const nameKey=findCol(['name','nom','llengua','language']);
+      const latKey=findCol(['latitude','latitud']);
+      const lngKey=findCol(['longitude','longitud']);
+      const levelKey=findCol(['level','nivell']);
+      if(!nameKey||!latKey||!lngKey){status.textContent='❌ Columns not recognized (expected name/latitude/longitude, as in Glottolog\'s languages_and_dialects_geo.csv).';return;}
+      const newGeo={};
+      rows.forEach(r=>{
+        const nm=r[nameKey];
+        const lat=parseFloat(r[latKey]);
+        const lng=parseFloat(r[lngKey]);
+        if(!nm||isNaN(lat)||isNaN(lng))return;
+        const key=normGeoName(nm);
+        if(!key)return;
+        const level=levelKey?String(r[levelKey]||'').toLowerCase().trim():'';
+        const existing=newGeo[key];
+        // Prefer 'language'-level entries over dialects when a name is ambiguous
+        if(!existing||(existing.level!=='language'&&level==='language')){
+          newGeo[key]={lat,lng,level};
+        }
+      });
+      GEO=newGeo;
+      const n=Object.keys(GEO).length;
+      if(!n){status.textContent='❌ No usable coordinates found in this file.';return;}
+      document.getElementById('geo-dz-label').innerHTML=`✅ ${file.name}<br><small>click to replace</small>`;
+      document.getElementById('geo-clear').classList.add('on');
+      status.textContent=`${n} Glottolog coordinates loaded.`;
+      // If an Excel file is already loaded, re-resolve its coordinates now,
+      // filling in the ones it was missing (order-independent loading)
+      if(RAWROWS.length){
+        const parsed=resolveCoords(RAWROWS);
+        if(parsed.length){
+          DATA=parsed;
+          hasData=true;
+          cm=buildCM(cf,cf2);
+          renderMkrs();renderLeg();renderLL(document.getElementById('srch').value);
+          document.getElementById('ll-count').textContent=DATA.length;
+          const pr=document.getElementById('upload-prompt');if(pr)pr.style.display='none';
+          status.textContent+=` · ${lastGeoUsedCount} location(s) applied to the current data.`;
+        }
+      }
+    }catch(err){status.textContent='❌ Error: '+err.message;}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ── GRAMBANK IN-APP IMPORT (pick any feature, fetch, build dataset) ─────── */
+const GB_BASE='https://raw.githubusercontent.com/grambank/grambank/master/cldf/';
+let GB_PARAMS=null;      // [{id,name}]
+let GB_CODES=null;       // Code_ID -> label
+let GB_LANGS=null;       // Language_ID -> {Name,Family_name,Latitude,Longitude,level,Glottocode}
+let GB_VALUES_TEXT=null; // cached raw text of values.csv (~50MB), fetched once per session
+let GB_SELECTED=new Set();
+
+async function fetchCsvRows(url){
+  const res=await fetch(url);
+  if(!res.ok)throw new Error(`HTTP ${res.status} fetching ${url}`);
+  const text=await res.text();
+  const wb=XLSX.read(text,{type:'string'});
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null,raw:false});
+}
+
+async function ensureGbMeta(){
+  if(GB_PARAMS)return;
+  const metaStatus=document.getElementById('gb-meta-status');
+  metaStatus.textContent='Loading Grambank features, codes and languages…';
+  const [params,codes,langs]=await Promise.all([
+    fetchCsvRows(GB_BASE+'parameters.csv'),
+    fetchCsvRows(GB_BASE+'codes.csv'),
+    fetchCsvRows(GB_BASE+'languages.csv')
+  ]);
+  GB_PARAMS=params.map(p=>({id:p.ID,name:p.Name})).filter(p=>p.id&&p.id.startsWith('GB'));
+  GB_CODES={};
+  codes.forEach(c=>{GB_CODES[c.ID]=(c.Description||c.Name||'').replace(/\.$/,'');});
+  GB_LANGS={};
+  langs.forEach(l=>{GB_LANGS[l.ID]=l;});
+  metaStatus.textContent='';
+  document.getElementById('gb-step-meta').style.display='none';
+  document.getElementById('gb-picker').style.display='block';
+  document.getElementById('gb-go').style.display='inline-block';
+  renderGbFeatList();
+}
+
+// Finds an existing FL column whose name matches a Grambank code exactly
+// (case/whitespace-insensitive), e.g. an Excel column literally called "GB130"
+function findMatchingColumnName(code){
+  const target=code.trim().toUpperCase();
+  return Object.keys(FL).find(k=>k.trim().toUpperCase()===target)||null;
+}
+
+function renderGbFeatList(){
+  const q=document.getElementById('gb-search').value.trim().toLowerCase();
+  const list=document.getElementById('gb-feat-list');
+  const filtered=GB_PARAMS.filter(p=>!q||p.id.toLowerCase().includes(q)||p.name.toLowerCase().includes(q));
+  list.innerHTML=filtered.map(p=>{
+    const matchCol=hasData?findMatchingColumnName(p.id):null;
+    const tag=matchCol?`<span class="gb-match-tag">↔ merges into "${matchCol}"</span>`:'';
+    return `
+    <label class="gb-feat-row">
+      <input type="checkbox" value="${p.id}" ${GB_SELECTED.has(p.id)?'checked':''}>
+      <span><span class="gb-feat-code">${p.id}</span>${p.name}${tag}</span>
+    </label>`;
+  }).join('')||'<div style="padding:8px;color:#999;font-size:.75rem">No features match your search.</div>';
+  list.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    cb.addEventListener('change',()=>{
+      if(cb.checked)GB_SELECTED.add(cb.value);else GB_SELECTED.delete(cb.value);
+      document.getElementById('gb-selected-count').textContent=`${GB_SELECTED.size} feature(s) selected`;
+    });
+  });
+}
+
+
+async function downloadGbValues(onProgress){
+  if(GB_VALUES_TEXT)return GB_VALUES_TEXT;
+  const res=await fetch(GB_BASE+'values.csv');
+  if(!res.ok)throw new Error(`HTTP ${res.status} fetching values.csv`);
+  const total=parseInt(res.headers.get('content-length')||'0',10);
+  const reader=res.body.getReader();
+  const decoder=new TextDecoder();
+  let received=0,text='';
+  while(true){
+    const {done,value}=await reader.read();
+    if(done)break;
+    received+=value.length;
+    text+=decoder.decode(value,{stream:true});
+    if(total)onProgress(received/total);
+  }
+  GB_VALUES_TEXT=text;
+  return text;
+}
+
+async function importFromGrambank(){
+  if(!GB_SELECTED.size){document.getElementById('gb-status').textContent='❌ Select at least one feature first.';return;}
+  const status=document.getElementById('gb-status');
+  const goBtn=document.getElementById('gb-go');
+  goBtn.disabled=true;
+  try{
+    status.innerHTML='Downloading Grambank\'s full value table (~50 MB, first time only)…<div class="gb-progress"><div class="gb-progress-bar" id="gb-pbar"></div></div>';
+    const text=await downloadGbValues(frac=>{
+      const bar=document.getElementById('gb-pbar');
+      if(bar)bar.style.width=Math.round(frac*100)+'%';
+    });
+    status.textContent='Parsing values…';
+    const wb=XLSX.read(text,{type:'string'});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null,raw:false});
+
+    const famFilter=document.getElementById('gb-family').value.trim().toLowerCase();
+    const famTerms=famFilter?famFilter.split(',').map(s=>s.trim()).filter(Boolean):[];
+
+    const selectedIds=[...GB_SELECTED];
+
+    // For each selected code, decide where its values go:
+    //  - if the currently loaded data already has a column named exactly like
+    //    the code (e.g. "GB130"), merge into that same column — but still show
+    //    it everywhere (selector, legend) as "GB130 – full feature name" so it's
+    //    understandable, not just the bare code
+    //  - otherwise, add it as a new column with a descriptive label
+    const colFor={};      // id -> column key used in DATA (data storage key)
+    const matchedCols=[]; // display labels of codes that merged into an existing column
+    const newCols=[];     // display labels of codes added as brand-new columns
+    selectedIds.forEach(id=>{
+      const p=GB_PARAMS.find(x=>x.id===id);
+      const niceLabel=`${id} – ${p?p.name:id}`;
+      const existingCol=hasData?findMatchingColumnName(id):null;
+      if(existingCol){
+        colFor[id]=existingCol;
+        FL[existingCol]=niceLabel; // enrich the display label; the data key itself is unchanged
+        matchedCols.push(niceLabel);
+      }else{
+        colFor[id]=niceLabel;
+        newCols.push(niceLabel);
+      }
+    });
+
+    status.textContent='Building the table…';
+    const wide={}; // Language_ID -> {GBxxx: label}
+    rows.forEach(r=>{
+      const pid=r.Parameter_ID;
+      if(!colFor[pid])return;
+      const langId=r.Language_ID;
+      const label=GB_CODES[r.Code_ID]||r.Value||'?';
+      (wide[langId]=wide[langId]||{})[pid]=label;
+    });
+
+    const candidates=[];
+    Object.keys(wide).forEach(langId=>{
+      const info=GB_LANGS[langId];
+      if(!info||info.level!=='language')return;
+      const lat=parseFloat(info.Latitude),lng=parseFloat(info.Longitude);
+      if(isNaN(lat)||isNaN(lng))return;
+      const fam=(info.Family_name||'').toLowerCase();
+      if(famTerms.length&&!famTerms.some(t=>fam.includes(t)))return;
+      const row={L:info.Name,V:null,lat,lng,PHYLO:info.Family_name||null,coordSource:'grambank'};
+      Object.entries(wide[langId]).forEach(([id,val])=>{row[colFor[id]]=val;});
+      candidates.push(row);
+    });
+
+    if(!candidates.length){status.textContent='❌ No languages match this combination of features/family filter.';goBtn.disabled=false;return;}
+
+    let addedCount;
+    if(!hasData){
+      // Nothing loaded yet: this becomes the map's dataset (pure Grambank exploration)
+      FL={};
+      Object.values(colFor).forEach(label=>{FL[label]=label;});
+      RAWROWS=[];
+      DATA=candidates;
+      addedCount=candidates.length;
+    }else{
+      // Overlay mode: never duplicate or overwrite languages already on the map;
+      // only add Grambank languages that aren't already present
+      const existingNames=new Set(DATA.map(d=>normGeoName(d.L)));
+      const newRows=candidates.filter(r=>!existingNames.has(normGeoName(r.L)));
+      Object.values(colFor).forEach(c=>{if(!(c in FL))FL[c]=c;});
+      DATA=DATA.concat(newRows);
+      addedCount=newRows.length;
+    }
+    hasData=true;
+
+    // Rebuild selectors from the full, merged set of columns
+    const varCols=Object.keys(FL);
+    if(!cf||!FL[cf])cf=varCols[0];
+    const sel=document.getElementById('feat-sel');
+    sel.innerHTML='';
+    varCols.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=FL[c]||c;if(c===cf)opt.selected=true;sel.appendChild(opt);});
+    const corr=document.getElementById('corr-sel');
+    corr.innerHTML='<option value="">— none —</option>';
+    varCols.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=FL[c]||c;corr.appendChild(opt);});
+    corr.disabled=false;
+    document.getElementById('btn-corr-toggle').disabled=false;
+    cf2=null;
+    document.getElementById('corr-sel-wrap').classList.remove('on');
+    document.getElementById('btn-corr-toggle').classList.remove('active');
+    document.getElementById('btn-corr-toggle').textContent='+ Correlation';
+    xi=null;av.clear();op=null;shp={};
+    cm=buildCM(cf);
+    renderMkrs();renderLeg();renderLL(document.getElementById('srch').value);
+    document.getElementById('ll-count').textContent=DATA.length;
+    const pr=document.getElementById('upload-prompt');if(pr)pr.style.display='none';
+    document.getElementById('feat-sel').disabled=false;
+
+    let msg=`✅ ${addedCount} language(s) added from Grambank.`;
+    if(matchedCols.length)msg+=` Merged into: ${[...new Set(matchedCols)].join(', ')}.`;
+    if(newCols.length)msg+=` Added as new column(s): ${newCols.join(', ')}.`;
+    status.textContent=msg;
+    setTimeout(()=>{document.getElementById('gb-modal').classList.remove('on');},2600);
+  }catch(err){
+    status.textContent='❌ Error: '+err.message;
+  }finally{
+    goBtn.disabled=false;
+  }
+}
+
+/* ── LANGUAGE LIST — drag-to-resize ───────────────────────────────────────
+   Default height is 40% of the panel's previous fixed size (was capped at
+   260px), and can be dragged larger/smaller via the handle above it. */
+const LL_HEIGHT_KEY='intymavi-lang-list-height';
+const LL_DEFAULT_HEIGHT=104; // 40% of the old 260px cap
+const LL_MIN_HEIGHT=60;
+function llMaxHeight(){
+  // Leave room for the fixed sections above (feature/correlation selectors) and
+  // a sensible minimum for the legend, so the language list can't swallow the
+  // whole sidebar
+  const sidebarH=document.getElementById('sidebar').clientHeight||600;
+  return Math.max(LL_MIN_HEIGHT,sidebarH-260);
+}
+function applyLLHeight(h){
+  h=Math.max(LL_MIN_HEIGHT,Math.min(llMaxHeight(),h));
+  document.getElementById('lang-list-section').style.height=h+'px';
+  return h;
+}
+let llHeight=(()=>{
+  const v=parseFloat(localStorage.getItem(LL_HEIGHT_KEY));
+  return applyLLHeight(isNaN(v)?LL_DEFAULT_HEIGHT:v);
+})();
+window.addEventListener('resize',()=>{llHeight=applyLLHeight(llHeight);});
+
+(()=>{
+  const handle=document.getElementById('ll-resize-handle');
+  let dragging=false,startY=0,startH=0;
+  function onMove(e){
+    if(!dragging)return;
+    const y=e.clientY??(e.touches&&e.touches[0].clientY);
+    llHeight=applyLLHeight(startH-(y-startY));
+  }
+  function onUp(){
+    if(!dragging)return;
+    dragging=false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+    try{localStorage.setItem(LL_HEIGHT_KEY,String(llHeight));}catch(e){}
+    window.removeEventListener('pointermove',onMove);
+    window.removeEventListener('pointerup',onUp);
+  }
+  handle.addEventListener('pointerdown',e=>{
+    dragging=true;
+    startY=e.clientY;
+    startH=document.getElementById('lang-list-section').getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    document.body.style.cursor='row-resize';
+    document.body.style.userSelect='none';
+    window.addEventListener('pointermove',onMove);
+    window.addEventListener('pointerup',onUp);
+    e.preventDefault();
+  });
+})();
+
+/* ── FULLSCREEN MODE ───────────────────────────────────────────────────── */
+function isFullscreen(){
+  return!!(document.fullscreenElement||document.webkitFullscreenElement);
+}
+function updateFsButton(){
+  const on=isFullscreen();
+  document.getElementById('fs-label').textContent=on?'Exit fullscreen':'Fullscreen';
+  document.getElementById('fs-icon').innerHTML=on
+    ? '<path d="M8 3H3v5h1.7V4.7H8V3zm4 0v1.7h3.3V8H17V3h-5zM3 12v5h5v-1.7H4.7V12H3zm14 0h-1.7v3.3H12V17h5v-5z"/>'
+    : '<path d="M3 3h5v1.7H4.7V8H3V3zm14 0v5h-1.7V4.7H12V3h5zM3 17v-5h1.7v3.3H8V17H3zm14 0h-5v-1.7h3.3V12H17v5z"/>';
+}
+document.getElementById('btn-fullscreen').addEventListener('click',()=>{
+  if(!isFullscreen()){
+    const el=document.documentElement;
+    (el.requestFullscreen||el.webkitRequestFullscreen)?.call(el);
+  }else{
+    (document.exitFullscreen||document.webkitExitFullscreen)?.call(document);
+  }
+});
+['fullscreenchange','webkitfullscreenchange'].forEach(ev=>{
+  document.addEventListener(ev,()=>{
+    updateFsButton();
+    // The map's tile grid is sized on load; force it to recompute after the
+    // viewport itself changes size, or tiles at the new edges stay blank
+    setTimeout(()=>map.invalidateSize(),150);
+  });
+});
+
+document.getElementById('btn-grambank').addEventListener('click',()=>{
+  document.getElementById('gb-modal').classList.add('on');
+  if(GB_PARAMS){renderGbFeatList();} // metadata already cached: just refresh match tags against current data
+  else ensureGbMeta().catch(err=>{document.getElementById('gb-meta-status').textContent='❌ Error: '+err.message;});
+});
+document.getElementById('gb-cancel').addEventListener('click',()=>{
+  document.getElementById('gb-modal').classList.remove('on');
+});
+document.getElementById('gb-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('gb-modal'))document.getElementById('gb-modal').classList.remove('on');
+});
+document.getElementById('gb-search').addEventListener('input',renderGbFeatList);
+document.getElementById('gb-go').addEventListener('click',importFromGrambank);
+
+/* ── COORDINATE PARSER — handles decimal and DMS formats ─────────────────
+   Accepts: 4.537 / -4.537 / 4°32'15"N / 83°45'W / 4° 32' 15.3" S / 4°32.5'N
+   Returns decimal degrees (negative for S/W), or 0 if unparseable.          */
+function parseCoord(raw){
+  if(raw===null||raw===undefined||raw==='')return null;
+  const s=String(raw).trim();
+  if(s==='')return null;
+  // Already a plain decimal number
+  if(/^-?\d+(\.\d+)?$/.test(s)){const v=parseFloat(s);return isNaN(v)?null:v;}
+  // DMS / DM pattern — extract cardinal direction
+  const card=s.match(/[NSEWnsew]/);
+  const dir=card?card[0].toUpperCase():null;
+  // Strip all letters, then split on °, ', "  or whitespace
+  const clean=s.replace(/[°'"″′˚NSEWnsew]/g,' ').trim();
+  const parts=clean.split(/\s+/).filter(Boolean).map(Number);
+  if(!parts.length||isNaN(parts[0]))return null;
+  const deg=parts[0]||0;
+  const min=parts[1]||0;
+  const sec=parts[2]||0;
+  let dec=deg+min/60+sec/3600;
+  if(dir==='S'||dir==='W')dec=-dec;
+  return isNaN(dec)?null:dec;
+}
+
+function handleFile(file){
+  if(!file)return;
+  const status=document.getElementById('modal-status');
+  status.textContent='Reading file…';
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const shName=wb.SheetNames.includes('Taula')?'Taula':wb.SheetNames[0];
+      const ws=wb.Sheets[shName];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:false});
+      if(!rows.length){status.textContent='❌ The sheet is empty.';return;}
+      // Discover variable columns dynamically
+      const allCols=Object.keys(rows[0]);
+      // Robustly match structural columns by name, accepting both Catalan and English headers (accent-insensitive)
+      const normCol=c=>c.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+      const findCol=aliases=>{const set=new Set(aliases);return allCols.find(c=>set.has(normCol(c)))||null};
+      const langKey=findCol(['llengua','language']);
+      const varKey=findCol(['varietat','variety']);
+      const latKey=findCol(['latitud','latitude']);
+      const lngKey=findCol(['longitud','longitude']);
+      const latDMSKey=findCol(['latituddms','latitudedms']);
+      const lngDMSKey=findCol(['longituddms','longitudedms']);
+      const familiaKey=findCol(['familia','family']);
+      const reservedKeys=new Set([langKey,varKey,latKey,lngKey,latDMSKey,lngDMSKey,familiaKey].filter(Boolean));
+      const varCols=allCols.filter(c=>!reservedKeys.has(c)&&!c.startsWith('__EMPTY'));
+      if(!varCols.length){status.textContent='❌ No variable columns found.';return;}
+      // Build FL from discovered columns
+      FL={};
+      varCols.forEach(c=>{FL[c]=c;});
+      // Parse rows, keeping the raw (unresolved) coordinate strings so they can be
+      // re-resolved later if a Glottolog geo CSV is loaded (in either order)
+      RAWROWS=rows.map(r=>{
+        const d={
+          L:langKey?(r[langKey]||'').trim():'',
+          V:varKey&&r[varKey]?String(r[varKey]).trim():null,
+          latRaw:latKey?r[latKey]:null,
+          lngRaw:lngKey?r[lngKey]:null
+        };
+        varCols.forEach(c=>{
+          const v=r[c];
+          d[c]=(v===null||v===undefined||v==='')?null:String(v).trim();
+        });
+        d.PHYLO=familiaKey&&r[familiaKey]?String(r[familiaKey]).trim():null;
+        return d;
+      }).filter(r=>r.L);
+      // Resolve final coordinates: keep valid Excel lat/lng as-is; use the Glottolog
+      // fallback (GEO) only for rows where the Excel coordinates are missing/invalid
+      const parsed=resolveCoords(RAWROWS);
+      if(!parsed.length){status.textContent='❌ No valid rows found (no coordinates in the Excel file, and no match in the Glottolog file either).';return;}
+      DATA=parsed;
+      hasData=true;
+      // Set feature: keep current if still valid, else use first
+      if(!cf||!FL[cf])cf=varCols[0];
+      // Rebuild feature selector dropdown
+      const sel=document.getElementById('feat-sel');
+      sel.innerHTML='';
+      varCols.forEach(c=>{
+        const opt=document.createElement('option');
+        opt.value=c;opt.textContent=FL[c]||c;
+        if(c===cf)opt.selected=true;
+        sel.appendChild(opt);
+      });
+      // Rebuild correlation selector
+      const corr=document.getElementById('corr-sel');
+      corr.innerHTML='<option value="">— cap —</option>';
+      varCols.forEach(c=>{
+        const opt=document.createElement('option');
+        opt.value=c;opt.textContent=FL[c]||c;
+        corr.appendChild(opt);
+      });
+      corr.disabled=false;
+      document.getElementById('btn-corr-toggle').disabled=false;
+      // Reset corr state
+      cf2=null;
+      document.getElementById('corr-sel-wrap').classList.remove('on');
+      document.getElementById('btn-corr-toggle').classList.remove('active');
+      document.getElementById('btn-corr-toggle').textContent='+ Correlation';
+      xi=null;av.clear();op=null;shp={};
+      cm=buildCM(cf);
+      renderMkrs();renderLeg();renderLL(document.getElementById('srch').value);
+      document.getElementById('ll-count').textContent=DATA.length;
+      // hide upload prompt
+      const pr=document.getElementById('upload-prompt');if(pr)pr.style.display='none';
+      document.getElementById('feat-sel').disabled=false;
+      status.textContent=`✅ ${DATA.length} varieties · ${varCols.length} variables loaded`+(lastGeoUsedCount?` · ${lastGeoUsedCount} located via Glottolog.`:'.');
+      setTimeout(()=>{document.getElementById('import-modal').classList.remove('on');status.textContent='';},2200);
+    }catch(err){status.textContent='❌ Error: '+err.message;}
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ── CLOSE PICKER ───────────────────────────────────────────────────────── */
+document.addEventListener('click',()=>{if(op!==null){op=null;renderLeg()}});
+
+/* ── INIT ───────────────────────────────────────────────────────────────── */
+function init(f,f2=null){
+  cf=f;cf2=f2&&f2!==''?f2:null;
+  av.clear();op=null;shp={};
+  cm=buildCM(cf,cf2);
+  renderMkrs();renderLeg();renderLL();
+  // Update corr info text
+  const info=document.getElementById('corr-info');
+  if(info){
+    if(cf2){
+      const combos=Object.keys(cm).length;
+      const attested=Object.keys(cm).filter(v=>countForVal(v)>0).length;
+      info.textContent=`${attested} of ${combos} combination${combos!==1?'s':''} attested · filter by intersection`;
+    } else {
+      info.textContent='';
+    }
+  }
+}
+document.getElementById('feat-sel').addEventListener('change',e=>{if(hasData)init(e.target.value,cf2)});
+document.getElementById('srch').addEventListener('input',e=>renderLL(e.target.value));
+
+// Correlation toggle
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('btn-corr-toggle').addEventListener('click',()=>{
+    const wrap=document.getElementById('corr-sel-wrap');
+    const btn=document.getElementById('btn-corr-toggle');
+    const isOn=wrap.classList.toggle('on');
+    btn.classList.toggle('active',isOn);
+    btn.textContent=isOn?'✕ Close':'+ Correlation';
+    if(!isOn){
+      // disable correlation
+      document.getElementById('corr-sel').value='';
+      if(hasData)init(cf,null);
+    }
+  });
+  document.getElementById('corr-sel').addEventListener('change',e=>{
+    if(hasData)init(cf,e.target.value||null);
+  });
+  document.getElementById('btn-clear-filter').addEventListener('click',e=>{e.stopPropagation();av.clear();applyF();renderLeg();renderLL(document.getElementById('srch').value)});
+});
+</script>
+</body>
+</html>
