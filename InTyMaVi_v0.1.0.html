@@ -203,6 +203,10 @@ select:focus{border-color:var(--accent)}
 .modal-btn-cancel{background:var(--panel);color:var(--ink)}
 .modal-btn-cancel:hover{background:var(--hover)}
 #modal-status{font-size:.73rem;color:#555;min-height:1.2em;margin-bottom:8px;font-style:italic}
+.missing-coord-note{font-size:.68rem;color:#a35b00;background:#fff6e8;border:1px solid #f0d9ad;border-radius:6px;padding:6px 9px;margin:2px 0 8px;font-style:normal}
+.missing-coord-note summary{cursor:pointer;font-weight:600}
+.missing-coord-note ul{margin:6px 0 0;padding-left:18px;color:#7a6a4a;max-height:120px;overflow-y:auto}
+.missing-coord-note li{margin-bottom:2px}
 .modal-geo-sect{border-top:1px solid var(--border);margin-top:6px;padding-top:12px}
 .modal-geo-title{font-size:.75rem;font-weight:700;color:var(--accent);margin-bottom:3px}
 .modal-geo-desc{font-size:.68rem;color:#777;margin-bottom:8px;line-height:1.4}
@@ -333,6 +337,7 @@ select:focus{border-color:var(--accent)}
       <input type="file" id="file-input" accept=".xlsx,.xls">
     </div>
     <div id="modal-status"></div>
+    <div id="modal-missing-note"></div>
 
     <div class="modal-geo-sect">
       <div class="modal-geo-title">Coordinates fallback (optional)</div>
@@ -510,8 +515,10 @@ function lookupGeo(name){
 // Resolves final lat/lng for each raw row: keep valid Excel coordinates as-is,
 // fall back to GEO (Glottolog) only when the Excel value is missing/invalid.
 let lastGeoUsedCount=0;
+let lastMissingCoordLangs=[]; // languages dropped from the map for lack of any valid coordinates
 function resolveCoords(rawRows){
   let geoUsed=0;
+  const missing=[];
   const out=rawRows.map(r=>{
     let lat=parseCoord(r.latRaw);
     let lng=parseCoord(r.lngRaw);
@@ -524,9 +531,26 @@ function resolveCoords(rawRows){
     Object.keys(r).forEach(k=>{if(k!=='latRaw'&&k!=='lngRaw')rest[k]=r[k];});
     rest.lat=lat;rest.lng=lng;rest.coordSource=coordSource;
     return rest;
-  }).filter(d=>d.lat!==null&&d.lng!==null&&!isNaN(d.lat)&&!isNaN(d.lng));
+  }).filter(d=>{
+    const ok=d.lat!==null&&d.lng!==null&&!isNaN(d.lat)&&!isNaN(d.lng);
+    if(!ok)missing.push(d.V?`${d.L} (${d.V})`:d.L);
+    return ok;
+  });
   lastGeoUsedCount=geoUsed;
+  lastMissingCoordLangs=missing;
   return out;
+}
+// Builds a short HTML note listing languages that couldn't be placed on the map
+// (shown under the status message after any import/re-resolution)
+function missingCoordNoteHTML(){
+  const list=lastMissingCoordLangs;
+  if(!list.length)return'';
+  const shown=list.slice(0,8).map(n=>`<li>${n}</li>`).join('');
+  const more=list.length>8?`<li><em>…and ${list.length-8} more</em></li>`:'';
+  return`<details class="missing-coord-note">
+    <summary>⚠️ ${list.length} language${list.length>1?'s':''} could not be placed on the map (no valid coordinates found)</summary>
+    <ul>${shown}${more}</ul>
+  </details>`;
 }
 
 /* ── FEATURE LABELS — dynamic, rebuilt from uploaded Excel ───────────────── */
@@ -613,7 +637,14 @@ function mixWhite(hex,t){
 
 /* ── MAP ────────────────────────────────────────────────────────────────── */
 const map=L.map('map',{center:[20,0],zoom:2,zoomSnap:0.5,zoomDelta:0.5,wheelPxPerZoomLevel:120});
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap © CartoDB',maxZoom:18}).addTo(map);
+// Esri's classic "World_Light_Gray" services need no API key (unlike Carto's
+// basemaps.cartocdn.com, which now requires one). Base = neutral background,
+// Reference = boundaries/labels drawn on top, together matching the old
+// Carto "light_all" look. Native tiles stop at zoom 16; maxNativeZoom lets
+// Leaflet scale them up smoothly beyond that instead of showing blanks.
+const ESRI_ATTR='Map data © OpenStreetMap contributors, © Esri — World Light Gray Base/Reference';
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{attribution:ESRI_ATTR,maxZoom:18,maxNativeZoom:16}).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,maxNativeZoom:16}).addTo(map);
 
 function mkIcon(color,shape='circle'){
   const html=`<div style="width:18px;height:18px;cursor:pointer">${shapeSVG(shape,color,18)}</div>`;
@@ -872,7 +903,9 @@ function exportGeometry(zoomLevel,ratio){
   const outH=Math.round(outW*rh/rw);
   const kmWidthM=kmForZoomLevel(zoomLevel)*1000;
   const idealZoom=Math.log2(156543.03392*outW/kmWidthM);
-  const tileZoom=Math.max(0,Math.min(18,Math.round(idealZoom)));
+  // Capped at 16 (not 18): Esri's no-key classic tile service tops out there —
+  // requesting deeper zooms would return blank/missing tiles for the export
+  const tileZoom=Math.max(0,Math.min(16,Math.round(idealZoom)));
   const metersPerPx=156543.03392/Math.pow(2,tileZoom);
   const cropW=kmWidthM/metersPerPx;
   const cropH=cropW*outH/outW;
@@ -1037,14 +1070,14 @@ async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconS
   const gridW=(txMax-txMin+1)*TILE, gridH=(tyMax-tyMin+1)*TILE;
   const full=document.createElement('canvas');full.width=gridW;full.height=gridH;
   const fctx=full.getContext('2d');
-  const subs=['a','b','c','d'];
   await Promise.all(
     Array.from({length:(txMax-txMin+1)*(tyMax-tyMin+1)},(_,k)=>{
       const tx=txMin+Math.floor(k/(tyMax-tyMin+1));
       const tyRaw=tyMin+(k%(tyMax-tyMin+1));
       const tx2=((tx%nTiles)+nTiles)%nTiles; // wrap horizontally
-      const s=subs[(tx2+tyRaw)%4];
-      return loadImg(`https://${s}.basemaps.cartocdn.com/light_nolabels/${tileZoom}/${tx2}/${tyRaw}.png`)
+      // Esri's classic tile REST scheme is {level}/{row}/{col} — i.e. z/y/x,
+      // the opposite order from Carto/OSM's z/x/y
+      return loadImg(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${tileZoom}/${tyRaw}/${tx2}`)
         .then(img=>{if(img)fctx.drawImage(img,(tx-txMin)*TILE,(tyRaw-tyMin)*TILE,TILE,TILE)});
     })
   );
@@ -1403,6 +1436,7 @@ document.getElementById('geo-clear').addEventListener('click',()=>{
     cm=buildCM(cf,cf2);
     renderMkrs();renderLeg();renderLL(document.getElementById('srch').value);
     document.getElementById('ll-count').textContent=DATA.length;
+    document.getElementById('modal-missing-note').innerHTML=missingCoordNoteHTML();
   }
 });
 
@@ -1410,10 +1444,18 @@ function handleGeoFile(file){
   if(!file)return;
   const status=document.getElementById('geo-status');
   status.textContent='Reading file…';
+  // Plain-text CSV/TSV files (no BOM) get misread by SheetJS's binary/codepage
+  // auto-detection — bytes of multi-byte UTF-8 characters (e.g. "á" = 0xC3 0xA1)
+  // get shown as separate Latin-1 characters ("Ã¡"). Reading the file as UTF-8
+  // text ourselves first sidesteps that entirely; .xlsx/.xls stay binary reads,
+  // since those already declare their own encoding internally.
+  const isPlainText=/\.(csv|tsv|txt)$/i.test(file.name);
   const reader=new FileReader();
   reader.onload=e=>{
     try{
-      const wb=XLSX.read(e.target.result,{type:'array'});
+      const wb=isPlainText
+        ? XLSX.read(e.target.result,{type:'string'})
+        : XLSX.read(e.target.result,{type:'array'});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:null,raw:false});
       if(!rows.length){status.textContent='❌ The file is empty.';return;}
@@ -1459,10 +1501,12 @@ function handleGeoFile(file){
           const pr=document.getElementById('upload-prompt');if(pr)pr.style.display='none';
           status.textContent+=` · ${lastGeoUsedCount} location(s) applied to the current data.`;
         }
+        document.getElementById('modal-missing-note').innerHTML=missingCoordNoteHTML();
       }
     }catch(err){status.textContent='❌ Error: '+err.message;}
   };
-  reader.readAsArrayBuffer(file);
+  if(isPlainText)reader.readAsText(file,'UTF-8');
+  else reader.readAsArrayBuffer(file);
 }
 
 /* ── GRAMBANK IN-APP IMPORT (pick any feature, fetch, build dataset) ─────── */
@@ -1796,6 +1840,7 @@ function handleFile(file){
   if(!file)return;
   const status=document.getElementById('modal-status');
   status.textContent='Reading file…';
+  document.getElementById('modal-missing-note').innerHTML='';
   const reader=new FileReader();
   reader.onload=e=>{
     try{
@@ -1841,7 +1886,11 @@ function handleFile(file){
       // Resolve final coordinates: keep valid Excel lat/lng as-is; use the Glottolog
       // fallback (GEO) only for rows where the Excel coordinates are missing/invalid
       const parsed=resolveCoords(RAWROWS);
-      if(!parsed.length){status.textContent='❌ No valid rows found (no coordinates in the Excel file, and no match in the Glottolog file either).';return;}
+      if(!parsed.length){
+        status.textContent='❌ No valid rows found (no coordinates in the Excel file, and no match in the Glottolog file either).';
+        document.getElementById('modal-missing-note').innerHTML=missingCoordNoteHTML();
+        return;
+      }
       DATA=parsed;
       hasData=true;
       // Set feature: keep current if still valid, else use first
@@ -1878,6 +1927,7 @@ function handleFile(file){
       const pr=document.getElementById('upload-prompt');if(pr)pr.style.display='none';
       document.getElementById('feat-sel').disabled=false;
       status.textContent=`✅ ${DATA.length} varieties · ${varCols.length} variables loaded`+(lastGeoUsedCount?` · ${lastGeoUsedCount} located via Glottolog.`:'.');
+      document.getElementById('modal-missing-note').innerHTML=missingCoordNoteHTML();
       setTimeout(()=>{document.getElementById('import-modal').classList.remove('on');status.textContent='';},2200);
     }catch(err){status.textContent='❌ Error: '+err.message;}
   };
