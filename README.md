@@ -1,4 +1,4 @@
-*This project was developed with the assistance of Anthropic's Claude AI and subsequently reviewed and maintained by the author.*
+*This project was developed with the assistance of AI and subsequently reviewed and maintained by the author.*
 
 # InTyMaVi — Interactive Typological Map Visualiser
 
@@ -19,6 +19,7 @@ features described below.
 - [7. Downloading a map image](#7-downloading-a-map-image)
 - [8. Saving and reusing a specific zoom/view](#8-saving-and-reusing-a-specific-zoomview)
 - [9. Troubleshooting](#9-troubleshooting)
+- [10. Acknowledgements](#10-acknowledgements)
 
 ---
 
@@ -176,3 +177,59 @@ that browser.
 - InTyMaVi needs an internet connection for the base map tiles, the Glottolog
   file (if you choose to fetch one online rather than loading a local file),
   and the Grambank features — everything else works fully offline.
+
+## 10. Acknowledgements
+
+The development and use of this tool have been made possible by the following open-source projects, datasets, and research infrastructures. We are grateful to their creators and maintainers for making their work freely available.
+
+---
+
+### Core Libraries
+
+#### Leaflet
+An open-source JavaScript library for interactive, mobile-friendly maps.  
+© 2010–2024 Volodymyr Agafonkin and contributors.  
+Licensed under the **BSD 2-Clause License**.  
+https://leafletjs.com/
+
+#### html2canvas
+A JavaScript library for capturing screenshots of web pages.  
+© 2012 Niklas von Hertzen.  
+Licensed under the **MIT License**.  
+https://html2canvas.hertzen.com/
+
+#### SheetJS (Community Edition)
+A JavaScript library for reading and writing spreadsheet files.  
+© SheetJS Community Edition.  
+Licensed under the **MIT License**.  
+https://sheetjs.com/
+
+---
+
+### Cartographic Data
+
+#### Natural Earth
+Free, public-domain vector and raster map data. Natural Earth is used as the primary cartographic basemap in this tool, providing country boundaries, coastlines, and populated place data at 1:10m resolution.  
+Public Domain.  
+https://www.naturalearthdata.com/
+
+---
+
+### Linguistic Data
+
+#### Glottolog
+A comprehensive bibliographic database of the world's languages, providing language classification and geographic coordinates. Glottolog coordinates are used as a fallback for language locations when Excel coordinates are missing or invalid.  
+Hammarström, Harald, Forkel, Robert, Haspelmath, Martin, & Bank, Sebastian. (2025). *Glottolog 5.1*. Max Planck Institute for Evolutionary Anthropology.  
+https://glottolog.org/  
+DOI: [10.5281/zenodo.13950591](https://doi.org/10.5281/zenodo.13950591)
+
+#### Grambank
+A global database of grammatical features, providing typological data for over 2,400 languages. Grambank data can be imported directly into the tool for comparative analysis and contextualisation of user-provided datasets.  
+Skirgård, H., Haynie, H. J., Blasi, D. E., Hammarström, H., Collins, J., Latarche, J. J., … & Greenhill, S. J. (2023). *Grambank: A global database of grammatical features* (v1.0). Max Planck Institute for Evolutionary Anthropology.  
+https://grambank.clld.org/  
+DOI: [10.5281/zenodo.7740434](https://doi.org/10.5281/zenodo.7740434)  
+Licensed under **CC BY 4.0**.
+
+---
+
+We also thank the broader open-source and open-science communities whose tools and data make reproducible, transparent research possible.
