@@ -110,7 +110,7 @@ select:focus{border-color:var(--accent)}
 #map{flex:1}
 .leaflet-popup-content-wrapper{background:rgba(240,240,236,.97);border:1.5px solid var(--border);border-radius:7px;box-shadow:var(--shadow);max-width:300px}
 .leaflet-popup-tip{background:rgba(240,240,236,.97)}
-.pp-name{font-family:Arial,sans-serif;font-size:1.02rem;color:var(--accent);margin-bottom:2px}
+.ne-label-anchor{background:transparent!important;border:0!important;box-shadow:none!important;width:0!important;height:0!important}.ne-country-label{background:transparent;border:0;box-shadow:none;color:#3e4349;font-family:Arial,sans-serif;font-weight:700;font-size:.72rem;text-shadow:0 1px 2px rgba(255,255,255,.95),0 -1px 1px rgba(255,255,255,.95);padding:0}.ne-country-label:before{display:none}.ne-city-label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;color:#41464c;font-family:Arial,sans-serif;font-weight:600;text-shadow:0 1px 2px rgba(255,255,255,.95),0 -1px 1px rgba(255,255,255,.95)}.ne-city-dot{width:4px;height:4px;border-radius:50%;background:#555b62;display:inline-block;flex:none}.pp-name{font-family:Arial,sans-serif;font-size:1.02rem;color:var(--accent);margin-bottom:2px}
 .pp-var{font-size:.68rem;font-style:italic;color:#555;margin-bottom:6px}
 .pp-ph{font-size:.65rem;color:#333;margin-bottom:10px;font-style:italic;line-height:1.55;border-left:2.5px solid var(--accent2);padding-left:7px}
 .pp-fb{background:rgba(74,103,65,.08);border:1px solid rgba(74,103,65,.25);border-radius:5px;padding:8px 12px}
@@ -451,6 +451,15 @@ select:focus{border-color:var(--accent)}
         </div>
 
         <div class="dl-field">
+          <label class="dl-field-lbl">Language names</label>
+          <select id="dl-language-labels">
+            <option value="none">Do not show language names</option>
+            <option value="left">Show to the left of each point</option>
+            <option value="right">Show to the right of each point</option>
+          </select>
+        </div>
+
+        <div class="dl-field">
           <label class="dl-field-lbl">Legend position</label>
           <div class="legpos-grid" id="legpos-grid">
             <button class="legpos-btn" data-pos="tl">
@@ -637,14 +646,119 @@ function mixWhite(hex,t){
 
 /* ── MAP ────────────────────────────────────────────────────────────────── */
 const map=L.map('map',{center:[20,0],zoom:2,zoomSnap:0.5,zoomDelta:0.5,wheelPxPerZoomLevel:120});
-// Esri's classic "World_Light_Gray" services need no API key (unlike Carto's
-// basemaps.cartocdn.com, which now requires one). Base = neutral background,
-// Reference = boundaries/labels drawn on top, together matching the old
-// Carto "light_all" look. Native tiles stop at zoom 16; maxNativeZoom lets
-// Leaflet scale them up smoothly beyond that instead of showing blanks.
-const ESRI_ATTR='Map data © OpenStreetMap contributors, © Esri — World Light Gray Base/Reference';
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',{attribution:ESRI_ATTR,maxZoom:18,maxNativeZoom:16}).addTo(map);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,maxNativeZoom:16}).addTo(map);
+
+/* ── NATURAL EARTH BASEMAP ──────────────────────────────────────────────────
+   Natural Earth is vector data rather than a web-tile basemap.  We load the
+   Natural Earth 10m Admin 0 countries GeoJSON and render it directly with Leaflet,
+   so the map no longer depends on Carto/Esri tiles and remains crisp when
+   zoomed.  The dataset is the Natural Earth Admin 0 Countries theme. */
+// 10m resolution: highest detail Natural Earth offers. Large download (~12.7MB
+// countries + ~18.5MB cities) but the localStorage cache below means this cost
+// is only paid once per browser — subsequent loads read from disk instantly.
+const NE_COUNTRIES_URL='https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson';
+const NE_CITIES_URL='https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places.geojson';
+const NE_EXPORT_COUNTRIES_URL='https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson';
+const NE_WATER='#d8d8d2', NE_LAND='#ffffff', NE_BORDER='#a8a89a', NE_BORDER_MAJOR='#8a8a78';
+const NE_STYLE={color:NE_BORDER,weight:0.7,opacity:0.98,fillColor:NE_LAND,fillOpacity:1};
+const NE_HOVER={weight:1.35,color:'#6b6b5c',fillColor:'#ddd7ca'};
+
+/* ── SIMPLE LOCAL CACHE FOR NATURAL EARTH DATA ────────────────────────────
+   These GeoJSON files are large; without caching they'd be re-downloaded on
+   every page load. We cache them in localStorage (with a version key so we
+   can bust the cache later) and fall back gracefully if storage is full or
+   unavailable (e.g. private browsing). */
+const NE_CACHE_VERSION='v10m-1';
+async function fetchNeJSON(url){
+  const cacheKey='ne-cache:'+NE_CACHE_VERSION+':'+url;
+  try{
+    const cached=localStorage.getItem(cacheKey);
+    if(cached)return JSON.parse(cached);
+  }catch(e){/* ignore corrupt/unavailable cache */}
+  const res=await fetch(url);
+  if(!res.ok)throw new Error(`HTTP ${res.status} loading ${url}`);
+  const data=await res.json();
+  try{localStorage.setItem(cacheKey,JSON.stringify(data));}
+  catch(e){/* storage full or unavailable — data still works, just won't be cached */}
+  return data;
+}
+let naturalEarthLayer=null, naturalEarthData=null, naturalEarthCities=null, naturalEarthCityLayer=null, naturalEarthCountryLabels=null, naturalEarthCitiesLoading=false;
+
+map.getContainer().style.background=NE_WATER;
+map.attributionControl.addAttribution('Natural Earth 10m — public domain');
+
+function neCountryLabel(feature){
+  const p=feature.properties||{};
+  return p.NAME || p.NAME_EN || p.ADMIN || '';
+}
+function neLabelPoint(feature){
+  const p=feature.properties||{};
+  if(Number.isFinite(+p.LABEL_Y)&&Number.isFinite(+p.LABEL_X)) return [+p.LABEL_Y,+p.LABEL_X];
+  const b=L.geoJSON(feature).getBounds(); return [b.getCenter().lat,b.getCenter().lng];
+}
+function countryLabelRank(feature){
+  const r=Number(feature.properties?.LABELRANK); return Number.isFinite(r)?r:5;
+}
+function updateNaturalEarthLabels(){
+  if(!naturalEarthLayer)return;
+  const z=map.getZoom();
+  if(naturalEarthCountryLabels)naturalEarthCountryLabels.forEach(x=>map.removeLayer(x));
+  naturalEarthCountryLabels=[];
+  if(z<3)return;
+  naturalEarthData.features.forEach(f=>{
+    // A restrained set of country names keeps the interactive map readable and fast.
+    if(countryLabelRank(f)>=(z<=3?3:z<=5?5:7))return;
+    const name=neCountryLabel(f); if(!name)return;
+    const [lat,lng]=neLabelPoint(f);
+    const label=L.marker([lat,lng],{interactive:false,zIndexOffset:-100,icon:L.divIcon({className:'ne-label-anchor',html:'',iconSize:[0,0],iconAnchor:[0,0]})}).bindTooltip(name,{permanent:true,direction:'center',className:'ne-country-label',opacity:1});
+    label.addTo(map); naturalEarthCountryLabels.push(label);
+  });
+}
+async function ensureNaturalEarthCities(){
+  if(naturalEarthCities||naturalEarthCitiesLoading)return;
+  naturalEarthCitiesLoading=true;
+  try{naturalEarthCities=await fetchNeJSON(NE_CITIES_URL);}
+  catch(e){naturalEarthCities={features:[]};}
+  finally{naturalEarthCitiesLoading=false; updateNaturalEarthCities();}
+}
+function updateNaturalEarthCities(){
+  const z=map.getZoom();
+  if(!naturalEarthCities){ if(z>=5)ensureNaturalEarthCities(); return; }
+  if(naturalEarthCityLayer)map.removeLayer(naturalEarthCityLayer);
+  naturalEarthCityLayer=L.layerGroup();
+  if(z<4){return;}
+  // Interactive map: capitals and large cities only, no small towns or village labels.
+  // Natural Earth SCALERANK 0–3 gives a restrained set of globally important cities.
+  const maxRank=z<=4?1:z<=6?2:3;
+  naturalEarthCities.features.forEach(f=>{
+    const p=f.properties||{}, rank=Number(p.SCALERANK);
+    const adm0cap=Number(p.ADM0CAP)||0;
+    const isCapital=adm0cap===1 || String(p.FEATURECLA||'').toLowerCase().includes('admin-0 capital');
+    if(!isCapital && (!Number.isFinite(rank) || rank>maxRank))return;
+    const name=p.NAMEASCII||p.NAME||''; if(!name)return;
+    const lat=Number(p.LATITUDE),lng=Number(p.LONGITUDE); if(!Number.isFinite(lat)||!Number.isFinite(lng))return;
+    const size=z>=10?'0.70rem':z>=8?'0.74rem':z>=6?'0.78rem':'0.68rem';
+    const icon=L.divIcon({className:'ne-label-anchor',html:`<span class="ne-city-label" style="font-size:${size}">${name}</span>`,iconSize:null});
+    L.marker([lat,lng],{icon,interactive:false,zIndexOffset:-50}).addTo(naturalEarthCityLayer);
+  });
+  naturalEarthCityLayer.addTo(map);
+}
+async function loadNaturalEarth(){
+  try{
+    naturalEarthData=await fetchNeJSON(NE_COUNTRIES_URL);
+    naturalEarthLayer=L.geoJSON(naturalEarthData,{
+      style:f=>countryLabelRank(f)<=2?{...NE_STYLE,weight:1.15,color:NE_BORDER_MAJOR}:NE_STYLE,
+      interactive:false
+    }).addTo(map);
+    naturalEarthLayer.bringToBack();
+    updateNaturalEarthLabels();
+  }catch(err){
+    console.warn('Natural Earth basemap could not be loaded:',err);
+    const fallback=L.rectangle([[-85,-180],[85,180]],{stroke:false,fillColor:NE_WATER,fillOpacity:1,interactive:false}).addTo(map);
+    fallback.bringToBack();
+  }
+}
+map.on('zoomend',()=>{updateNaturalEarthLabels();updateNaturalEarthCities();});
+loadNaturalEarth();
 
 function mkIcon(color,shape='circle'){
   const html=`<div style="width:18px;height:18px;cursor:pointer">${shapeSVG(shape,color,18)}</div>`;
@@ -903,9 +1017,9 @@ function exportGeometry(zoomLevel,ratio){
   const outH=Math.round(outW*rh/rw);
   const kmWidthM=kmForZoomLevel(zoomLevel)*1000;
   const idealZoom=Math.log2(156543.03392*outW/kmWidthM);
-  // Capped at 16 (not 18): Esri's no-key classic tile service tops out there —
-  // requesting deeper zooms would return blank/missing tiles for the export
-  const tileZoom=Math.max(0,Math.min(16,Math.round(idealZoom)));
+  // Natural Earth is vector data, so there is no native tile-zoom ceiling.
+  // Keep the projection zoom high enough for the requested physical extent.
+  const tileZoom=Math.max(0,Math.min(18,Math.round(idealZoom)));
   const metersPerPx=156543.03392/Math.pow(2,tileZoom);
   const cropW=kmWidthM/metersPerPx;
   const cropH=cropW*outH/outW;
@@ -1047,12 +1161,46 @@ function kmForZoomLevel(level){
   return ZOOM_WORLD_KM*Math.pow(ZOOM_RATIO,lvl);
 }
 
-async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconSize='small', centerLat, centerLng}={}){
+function drawNaturalEarthGeometry(ctx,geojson,project){
+  if(!geojson)return;
+  const drawLine=(coords)=>{
+    if(!coords||!coords.length)return;
+    let started=false;
+    coords.forEach(([lng,lat])=>{
+      const [x,y]=project(lat,lng);
+      if(!Number.isFinite(x)||!Number.isFinite(y))return;
+      if(!started){ctx.moveTo(x,y);started=true;}else ctx.lineTo(x,y);
+    });
+    if(started)ctx.closePath();
+  };
+  const drawGeometry=(g)=>{
+    if(!g)return;
+    if(g.type==='Polygon')g.coordinates.forEach(drawLine);
+    else if(g.type==='MultiPolygon')g.coordinates.forEach(poly=>poly.forEach(drawLine));
+  };
+  if(geojson.type==='FeatureCollection')geojson.features.forEach(f=>drawGeometry(f.geometry));
+  else if(geojson.type==='Feature')drawGeometry(geojson.geometry);
+  else drawGeometry(geojson);
+}
+
+let naturalEarthExportData=null;
+async function ensureNaturalEarthData(){
+  // Reuse the interactive map's copy when available instead of downloading it again.
+  if(naturalEarthData)return naturalEarthData;
+  if(naturalEarthExportData)return naturalEarthExportData;
+  naturalEarthExportData=await fetchNeJSON(NE_EXPORT_COUNTRIES_URL);
+  return naturalEarthExportData;
+}
+async function ensureNaturalEarthCities(){
+  if(naturalEarthCities)return naturalEarthCities;
+  naturalEarthCities=await fetchNeJSON(NE_CITIES_URL);
+  return naturalEarthCities;
+}
+
+async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconSize='small', languageLabels='none', centerLat, centerLng}={}){
   const sp=ICON_SIZES[iconSize]||ICON_SIZES.small;
   const{TILE,outW,outH,tileZoom,cropW,cropH}=exportGeometry(zoomLevel,ratio);
 
-  // Fall back to the current data's bounding-box centroid only if no explicit
-  // center was given (should not normally happen — kept as a safety net)
   if(typeof centerLat!=='number'||typeof centerLng!=='number'){
     const lats=DATA.map(d=>d.lat), lngs=DATA.map(d=>d.lng);
     centerLat=(Math.min(...lats)+Math.max(...lats))/2;
@@ -1060,42 +1208,34 @@ async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconS
   }
 
   const[cx,cy]=globalPx(centerLat,centerLng,tileZoom,TILE);
-
   const left=cx-cropW/2, top=cy-cropH/2;
-  const nTiles=Math.pow(2,tileZoom);
-  let txMin=Math.floor(left/TILE), txMax=Math.floor((left+cropW-1)/TILE);
-  let tyMin=Math.floor(top/TILE), tyMax=Math.floor((top+cropH-1)/TILE);
-  tyMin=Math.max(0,tyMin); tyMax=Math.min(nTiles-1,tyMax);
 
-  const gridW=(txMax-txMin+1)*TILE, gridH=(tyMax-tyMin+1)*TILE;
-  const full=document.createElement('canvas');full.width=gridW;full.height=gridH;
-  const fctx=full.getContext('2d');
-  await Promise.all(
-    Array.from({length:(txMax-txMin+1)*(tyMax-tyMin+1)},(_,k)=>{
-      const tx=txMin+Math.floor(k/(tyMax-tyMin+1));
-      const tyRaw=tyMin+(k%(tyMax-tyMin+1));
-      const tx2=((tx%nTiles)+nTiles)%nTiles; // wrap horizontally
-      // Esri's classic tile REST scheme is {level}/{row}/{col} — i.e. z/y/x,
-      // the opposite order from Carto/OSM's z/x/y
-      return loadImg(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${tileZoom}/${tyRaw}/${tx2}`)
-        .then(img=>{if(img)fctx.drawImage(img,(tx-txMin)*TILE,(tyRaw-tyMin)*TILE,TILE,TILE)});
-    })
-  );
-
-  // Crop the fetched tile grid to the requested physical extent and rescale it to the fixed
-  // output resolution in a single step
   const out=document.createElement('canvas');out.width=outW;out.height=outH;
   const octx=out.getContext('2d');
-  const srcX=left-txMin*TILE, srcY=top-tyMin*TILE;
-  octx.drawImage(full, srcX, srcY, cropW, cropH, 0, 0, outW, outH);
+  // Explicit ocean/land contrast for downloaded maps.
+  octx.fillStyle=NE_WATER;
+  octx.fillRect(0,0,outW,outH);
 
-  // Maps a geographic coordinate straight to final output-canvas pixel space, independent of
-  // the basemap tile-zoom used above — this keeps marker sizes correct at every zoom level
+  // Natural Earth uses geographic coordinates; project them into the same
+  // Web-Mercator pixel space used by the rest of the exporter.
   const scaleX=outW/cropW, scaleY=outH/cropH;
   function geo2out(lat,lng){
     const[px,py]=globalPx(lat,lng,tileZoom,TILE);
-    return [(px-left)*scaleX,(py-top)*scaleY];
+    return[(px-left)*scaleX,(py-top)*scaleY];
   }
+
+  const ne=await ensureNaturalEarthData();
+  octx.save();
+  octx.beginPath();
+  drawNaturalEarthGeometry(octx,ne,geo2out);
+  octx.fillStyle=NE_LAND;
+  octx.strokeStyle=NE_BORDER;
+  octx.lineWidth=Math.max(0.65,0.9*scaleX);
+  octx.fill();
+  octx.stroke();
+  octx.restore();
+
+  // Geographic country/city text is intentionally omitted from exported maps.
 
   // draw language markers
   const R=sp.R;
@@ -1103,7 +1243,6 @@ async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconS
   const PTHRESH=R*1.75;
   const PSPREAD=R*0.6875;
   const MAX_ITER=16;
-
   const dpxPos=dpx.map(([px,py])=>({px,py,rpx:px,rpy:py,off:false}));
   const dpxSeen=new Set();
   const dpxGroups=[];
@@ -1116,10 +1255,9 @@ async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconS
     });
     if(grp.length>1){grp.forEach(k=>dpxSeen.add(k));dpxGroups.push(grp);}
   });
-
   dpxGroups.forEach(grp=>{
     const n=grp.length;
-    const angles=grp.map((_,k)=>(2*Math.PI*k)/n - Math.PI/2);
+    const angles=grp.map((_,k)=>(2*Math.PI*k)/n-Math.PI/2);
     for(let iter=0;iter<MAX_ITER;iter++){
       let anyCol=false;
       grp.forEach((idx,k)=>{
@@ -1138,28 +1276,40 @@ async function generateMapImage({zoomLevel=4, ratio='4:3', legendPos='tl', iconS
       dpxPos[idx].off=true;
     });
   });
-
   dpxPos.forEach(({px,py,rpx,rpy,off})=>{
     if(!off)return;
     octx.beginPath();octx.moveTo(rpx,rpy);octx.lineTo(px,py);
     octx.strokeStyle='rgba(80,80,80,0.55)';octx.lineWidth=1;octx.stroke();
   });
   DATA.forEach((d,i)=>{
-    const val=corrKey(d); const color=cm[val]||'#888';
+    const val=corrKey(d);const color=cm[val]||'#888';
     const{px,py}=dpxPos[i];
     drawMarkerShape(octx,shp[val]||'circle',px,py,R,color);
+    if(languageLabels!=='none'){
+      const name=String(d.L||'').trim();
+      if(name){
+        // Slightly larger labels for all three download-size presets.
+        const fs=Math.max(11,Math.min(22,R*1.25));
+        const side=languageLabels==='right'?'right':'left';
+        const gap=R+7; const tx=side==='right'?px+gap:px-gap;
+        octx.save();octx.font=`600 ${fs}px Arial,sans-serif`;octx.textAlign=side==='right'?'left':'right';octx.textBaseline='middle';
+        octx.lineWidth=Math.max(2,fs*0.24);octx.strokeStyle='rgba(255,255,255,.92)';
+        octx.strokeText(name,tx,py);octx.fillStyle='#2c2c2c';octx.fillText(name,tx,py);octx.restore();
+      }
+    }
   });
 
   if(legendPos!=='none'){
     const legScale=sp.legendScale*LEGEND_BOOST;
     const m=buildLegendMetrics(octx,legScale);
     const margin=10*legScale;
-    const bx=legendPos.includes('r') ? out.width-m.bw-margin : margin;
-    const by=legendPos.includes('b') ? out.height-m.bh-margin : margin;
+    const bx=legendPos.includes('r')?out.width-m.bw-margin:margin;
+    const by=legendPos.includes('b')?out.height-m.bh-margin:margin;
     drawLegendBox(octx,bx,by,m,legScale);
   }
   return out;
 }
+
 
 /* ── DOWNLOAD SETTINGS PERSISTENCE ─────────────────────────────────────── */
 const DL_SETTINGS_KEY='intymavi-download-settings';
@@ -1187,6 +1337,7 @@ function applyDLSettingsToModal(){
   document.getElementById('dl-ratio').value=s.ratio;
   document.getElementById('dl-size').value=s.iconSize||'small';
   document.getElementById('dl-legend-separate').checked=!!s.legendSeparate;
+  document.getElementById('dl-language-labels').value=(s.languageLabels===true?'left':(s.languageLabels||'none'));
   dlLegendPos=s.legendPos;
   if(typeof s.centerLat==='number'&&typeof s.centerLng==='number'){
     dlCenterLat=s.centerLat; dlCenterLng=s.centerLng;
@@ -1218,6 +1369,7 @@ function currentDLSettings(){
     ratio:document.getElementById('dl-ratio').value,
     legendPos:dlLegendPos,
     legendSeparate:document.getElementById('dl-legend-separate').checked,
+    languageLabels:document.getElementById('dl-language-labels').value,
     iconSize:document.getElementById('dl-size').value
   };
 }
@@ -1228,6 +1380,7 @@ function applySettingsObjectToModal(s){
   document.getElementById('dl-ratio').value=s.ratio||'4:3';
   document.getElementById('dl-size').value=s.iconSize||'small';
   document.getElementById('dl-legend-separate').checked=!!s.legendSeparate;
+  document.getElementById('dl-language-labels').value=(s.languageLabels===true?'left':(s.languageLabels||'none'));
   dlLegendPos=s.legendPos||'tl';
   if(typeof s.centerLat==='number'&&typeof s.centerLng==='number'){
     dlCenterLat=s.centerLat; dlCenterLng=s.centerLng;
@@ -1312,6 +1465,7 @@ document.getElementById('dl-zoom-fine').addEventListener('input',()=>{
 });
 document.getElementById('dl-ratio').addEventListener('change',()=>schedulePreview());
 document.getElementById('dl-size').addEventListener('change',()=>schedulePreview());
+document.getElementById('dl-language-labels').addEventListener('change',()=>schedulePreview());
 
 document.querySelectorAll('.dl-focus-btn').forEach(btn=>{
   btn.addEventListener('click',()=>{
@@ -1349,12 +1503,13 @@ async function runPreview(){
   const ratio=document.getElementById('dl-ratio').value;
   const iconSize=document.getElementById('dl-size').value;
   const legendPos=dlLegendPos;
+  const languageLabels=document.getElementById('dl-language-labels').value;
   const[rw,rh]=ratio.split(':').map(Number);
   frame.style.height=Math.round(frame.clientWidth*rh/rw)+'px';
   loading.textContent='Generating preview…';
   loading.style.display='flex';
   try{
-    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,centerLat:dlCenterLat,centerLng:dlCenterLng});
+    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,languageLabels,centerLat:dlCenterLat,centerLng:dlCenterLng});
     if(token!==previewToken)return; // a newer preview request has superseded this one
     img.src=canvas.toDataURL('image/png');
     img.style.display='block';
@@ -1371,13 +1526,14 @@ document.getElementById('dl-go').addEventListener('click',async()=>{
   const iconSize=document.getElementById('dl-size').value;
   const legendSeparate=document.getElementById('dl-legend-separate').checked;
   const legendPos=dlLegendPos;
+  const languageLabels=document.getElementById('dl-language-labels').value;
   saveDLSettings(currentDLSettings());
 
   document.getElementById('legpos-modal').classList.remove('on');
   const ov=document.getElementById('cap-ov');ov.classList.add('on');
   try{
     const baseName=cf2?`Map_${FL[cf]||cf}_x_${FL[cf2]||cf2}`:`Map_${FL[cf]||cf}`;
-    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,centerLat:dlCenterLat,centerLng:dlCenterLng});
+    const canvas=await generateMapImage({zoomLevel,ratio,legendPos,iconSize,languageLabels,centerLat:dlCenterLat,centerLng:dlCenterLng});
     const a=document.createElement('a');
     a.download=`${baseName}.png`;
     a.href=canvas.toDataURL('image/png');
