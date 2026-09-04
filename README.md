@@ -1,4 +1,7 @@
-*This project was developed with the assistance of AI and subsequently reviewed and maintained by the author.*
+*This project was fully AI-assisted (vibe-coded) and is subsequently reviewed and maintained by the author.*
+
+You can also use InTyMaVi directly in your browser, **no download needed**!
+→ https://pardosergi.github.io/InTyMaVi/
 
 # InTyMaVi — Interactive Typological Map Visualiser
 
