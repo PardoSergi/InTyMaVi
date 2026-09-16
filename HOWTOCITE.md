@@ -2,19 +2,28 @@
 
 If you use InTyMaVi in your research, please cite the version you used as described below:
 
->Pardo Doña, S. (2026). *InTyMaVi: Interactive Typological Map Visualiser* (Version 0.1.0) [Computer software]. GitHub. https://github.com/PardoSergi/InTyMaVi/tree/main
+>Pardo Doña, S. (**year of the version you used**). *InTyMaVi: Interactive Typological Map Visualiser* (Version **X.Y.Z**) [Computer software]. GitHub. https://github.com/PardoSergi/InTyMaVi/tree/main
 
 ### Data sources & attribution
 
 InTyMaVi itself doesn't ship with any linguistic data — you bring your own —
 but two optional, built-in features fetch and display data from external
-databases: the **Glottolog coordinate fallback** (§4) and the **Grambank
-import** (§5). Both are distributed under the **Creative Commons Attribution
-4.0 International licence (CC BY 4.0)**, which requires attribution whenever
-their data is used or redistributed — including here. If you publish, share,
-or redistribute InTyMaVi (e.g. on GitHub) with these features enabled, please
-keep this section intact, or otherwise credit both projects visibly in your
-own copy.
+databases: **Glottolog enrichment** (§5) and the **Grambank import** (§7).
+Both are downloaded as [CLDF](https://cldf.clld.org/) datasets directly from
+their official GitHub repositories, and both are distributed under the
+**Creative Commons Attribution 4.0 International licence (CC BY 4.0)**,
+which requires attribution whenever their data is used or redistributed —
+including here. If you publish, share, or redistribute InTyMaVi (e.g. on
+GitHub) with these features enabled, please keep this section intact, or
+otherwise credit both projects visibly in your own copy.
+
+Because InTyMaVi lets you choose which specific Glottolog and Grambank
+release to use (§6), rather than tying you to one fixed version, **the
+version actually used can differ between users and between sessions**. The
+release you loaded is always recorded automatically in the "🗂️ Data
+sources" panel and in every map's export metadata (§9) — check there for the
+exact version to cite for a specific analysis, rather than assuming the
+version numbers below.
 
 #### Grambank
 
@@ -31,11 +40,12 @@ the dataset release (for the specific version used) be cited:
 - Website: <https://grambank.clld.org>
 - Full citation instructions: <https://github.com/grambank/grambank/wiki/Citing-grambank>
 - Licence: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-- The Zenodo DOI above is the **concept DOI**, which always resolves to the
-  latest release; since InTyMaVi fetches directly from the `grambank/grambank`
-  GitHub repository's `master` branch, the exact version can change over
-  time. If you're citing a specific analysis made with InTyMaVi, check the
-  version-specific DOI shown on the Zenodo page at the time you used the app.
+- InTyMaVi lets you select a specific tagged Grambank release (from the
+  `grambank/grambank` GitHub repository) rather than always using a single
+  fixed version; the Zenodo DOI above is the **concept DOI**, which always
+  resolves to the latest release. For a specific analysis, cite the
+  version-specific DOI matching the release you actually selected — shown in
+  "🗂️ Data sources" and recorded automatically in each map's export metadata.
 - Grambank is part of [Glottobank](https://glottobank.org), a joint
   initiative of the Max Planck Institute for Evolutionary Anthropology, the
   Australian National University, Yale University, and many collaborating
@@ -49,6 +59,9 @@ the dataset release (for the specific version used) be cited:
 (Available online at http://glottolog.org)
 
 - Licence: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-- Glottolog is versioned; if you cite a specific analysis made with InTyMaVi,
-  note the version/date of the `languages_and_dialects_geo.csv` file you
-  loaded (shown on the [Glottolog downloads page](https://glottolog.org/meta/downloads)).
+- InTyMaVi downloads Glottolog as a full CLDF dataset (from the
+  `glottolog/glottolog-cldf` GitHub repository) rather than a single fixed
+  file, and lets you select which tagged release to use. For a specific
+  analysis, cite the release you actually selected — shown in "🗂️ Data
+  sources" and recorded automatically in each map's export metadata (§9) —
+  rather than assuming the version above.
