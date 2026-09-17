@@ -1,4 +1,4 @@
-**54 prompts** ordered chronologically (oldest to newest).
+**57 prompts** ordered chronologically (oldest to newest).
 
 This prompt list is currently still in progress and is therefore non-exhaustive. It does not constitute a guide on how to create a program like InTyMaVi, but rather a retrospective account of its development.
 
@@ -750,3 +750,39 @@ the program. I am extremely thankful to everyone who emailed me or opened an iss
 **Original:**
 
 > Make "Atlantic-centered (Equal Earth)" the default, followed by "Pacific-centered (Equal Earth)", "Atlantic-centered (Mercator)" and "Pacific-centered (Mercator)"
+
+---
+
+### 55. 2026-09-11
+
+**Original:**
+
+> I want you to modify InTyMaVi to substantially improve how it handles linguistic datasets, data provenance, Glottolog, and Grambank. Preserve all existing functionality unless a change below explicitly requires modifying it.
+> InTyMaVi should support two types of user-provided linguistic datasets: Excel/CSV files and CLDF datasets. The application should automatically determine which type of dataset the user has provided and use the appropriate importer.
+> Use Glottocodes as the primary language identifier. When given an Excel/CSV file, these will be under a column named 'Glottocode'. Whenever a Glottocode is available, and every other piece of data about the language (including its name) is optional, as it will be retrieved from Glottolog. If any optional data about the language (such as coordinates, language or phylogeny) are available in the user's dataset, these will be used instead of Glottolog's.
+> Never rely on language names for matching languages to Glottolog or Grambank. One may include languages without a glottocode in their dataset only as long as they provide the name and coordinates, and optionally other data. These manually specified languages should still work normally in all existing functionality.
+>  When clicking on the language in the interactive map, the user should be able to see the language's data (name, glottocode, coordinates and phylogeny). A badge next to each one of these data should show when they have been retrieved from Glottolog.
+> Ignore all columns whose header begins with # in an Excel/CSV file. The rule must apply to the column header, not to cell contents.
+> Allow users to import a CLDF dataset directly. Read the CLDF metadata (cldf-metadata.json) rather than assuming fixed filenames or column names whenever possible. Use the metadata to identify the relevant languages and parameters. Convert the imported CLDF data into InTyMaVi's existing internal data representation so that the rest of the application (map, labels, correlations, etc.) does not need to know whether the data originated from Excel or CLDF.
+> The application should import Glottolog and Grambank data in CLDF form, use Glottocodes as the main identifier, and retrieve coordinates and other relevant language information from the Glottolog CLDF dataset. The user should be able to select which Glottolog or Grambank release/version is used. The latest available version should be the default.
+> When it comes to Grambank, the application should use its identifiers and relationships as defined by its CLDF metadata. Do not assume that the exact table names or column names are identical across all CLDF datasets. Use the CLDF metadata where appropriate.
+> Do not embed the entire Glottolog and Grambank datasets into the HTML. Use an architecture in which InTyMaVi can download and change the selected version of the CLDF datasets when needed.
+> The application should preferably cache downloaded datasets locally so that users do not have to download large datasets every time they open InTyMaVi.
+> Likewise, users should be able to provide their own coordinates for languages/varieties that are not linked to Glottolog.
+> If a language has a 'variety' value, whenever the user chooses to show language names in the exported map, the variety should show between parentheses after the language's name.
+
+---
+
+### 56. 2026-09-12
+
+**Original:**
+
+> The "data sources" window is open from the beginning and is impossible to close.
+
+---
+
+### 57. 2026-09-12
+
+**Original:**
+
+> Make the following changes: The language family should not be displayed as a Glottocode. Instead, display the family name. Languages imported from Grambank should only appear on the map when a Grambank feature is being visualised. They should not appear when visualising the user's own linguistic features. When adding a Grambank feature to a CLDF dataset, it should be sufficient for the parameter ID to match the corresponding Grambank code. The user should not need to provide any additional Grambank-specific information.
